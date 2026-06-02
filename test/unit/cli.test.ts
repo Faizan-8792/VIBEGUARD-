@@ -74,6 +74,10 @@ describe('CLI Shell', () => {
       'watch',
       'benchmark',
       'graph',
+      'serve',
+      'review',
+      'flows',
+      'search',
     ];
     for (const cmd of commands) {
       expect(result.stdout).toContain(cmd);

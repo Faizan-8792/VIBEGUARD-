@@ -530,6 +530,59 @@ function setupProgram(): Command {
       await runGraph(ctx, { open: cmdOpts.open !== false });
     });
 
+  // review command — risk-scored change review with security fold-in
+  program
+    .command('review')
+    .description('Risk-scored review of changed files: blast radius, test gaps, and security findings')
+    .option('--base <ref>', 'Git base ref to diff against', 'HEAD~1')
+    .option('--depth <n>', 'Blast-radius hops to traverse', parseInt)
+    .option('--brief', 'Compact output with the Token Savings panel', false)
+    .action(async (cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'review');
+      const { runReview } = await import('./commands/review.js');
+      await runReview(ctx, { base: cmdOpts.base, depth: cmdOpts.depth, brief: cmdOpts.brief });
+    });
+
+  // flows command — execution flows + graph intelligence (bridges, knowledge gaps)
+  program
+    .command('flows')
+    .description('Analyze execution flows, architectural bridges, and knowledge gaps')
+    .option('--view <name>', 'View: flows (default), bridges, or gaps', 'flows')
+    .option('--limit <n>', 'Max results to show', parseInt)
+    .action(async (cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'flows');
+      const { runFlows } = await import('./commands/flows.js');
+      await runFlows(ctx, { view: cmdOpts.view, limit: cmdOpts.limit });
+    });
+
+  // search command — hybrid keyword + semantic search over the graph
+  program
+    .command('search')
+    .description('Hybrid keyword + semantic search over code entities (local, zero-token)')
+    .argument('<query>', 'Natural-language or identifier query')
+    .option('--limit <n>', 'Max results to return', parseInt)
+    .action(async (query, cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'search');
+      const { runSearch } = await import('./commands/search.js');
+      await runSearch(ctx, { query, limit: cmdOpts.limit });
+    });
+
+  // serve command — start the MCP server (live agent tools over stdio)
+  program
+    .command('serve')
+    .alias('mcp')
+    .description('Start the VibeGuard MCP server (exposes analysis engines as live agent tools)')
+    .option('--tools <names>', 'Comma-separated allowlist of MCP tools to expose')
+    .action(async (cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'serve');
+      const { runServe } = await import('./commands/serve.js');
+      await runServe(ctx, { tools: cmdOpts.tools });
+    });
+
   return program;
 }
 

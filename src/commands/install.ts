@@ -1,5 +1,5 @@
 import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { statusIcon, brand, header } from '../utils/ui.js';
 import { emitJson } from '../utils/json-output.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
@@ -118,6 +118,83 @@ async function withSuppressedStdout<T>(enabled: boolean, fn: () => Promise<T>): 
   }
 }
 
+/**
+ * Write or merge a VibeGuard MCP server entry into a platform's MCP config file.
+ * Merges into any existing config so other MCP servers are preserved.
+ * Uses `npx -y vibeguard serve` so it works on any machine without absolute paths.
+ */
+async function writeMcpConfig(
+  projectRoot: string,
+  relativeConfigPath: string,
+): Promise<{ action: string; path: string }> {
+  const configPath = join(projectRoot, relativeConfigPath);
+  await mkdir(dirname(configPath), { recursive: true });
+
+  let config: { mcpServers?: Record<string, unknown> } = {};
+  let action = 'Created';
+  try {
+    const raw = await readFile(configPath, 'utf-8');
+    config = JSON.parse(raw);
+    action = 'Updated';
+  } catch {
+    // No existing config (or unreadable) — start fresh.
+  }
+
+  if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+    config.mcpServers = {};
+  }
+
+  config.mcpServers['vibeguard'] = {
+    command: 'npx',
+    args: ['-y', 'vibeguard', 'serve'],
+    disabled: false,
+    autoApprove: [
+      'get_minimal_context',
+      'query_graph',
+      'explain_node',
+      'get_affected',
+      'find_path',
+    ],
+  };
+
+  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  return { action: `${action} MCP config`, path: relativeConfigPath.replace(/\\/g, '/') };
+}
+
+/**
+ * Remove the VibeGuard entry from a platform's MCP config, preserving any other
+ * MCP servers and removing the file only when it becomes empty.
+ */
+async function removeMcpConfig(
+  projectRoot: string,
+  relativeConfigPath: string,
+): Promise<{ removed: boolean; path: string }> {
+  const normalizedPath = relativeConfigPath.replace(/\\/g, '/');
+  const configPath = join(projectRoot, relativeConfigPath);
+
+  let config: { mcpServers?: Record<string, unknown> };
+  try {
+    config = JSON.parse(await readFile(configPath, 'utf-8'));
+  } catch {
+    return { removed: false, path: normalizedPath };
+  }
+
+  if (!config.mcpServers || !config.mcpServers['vibeguard']) {
+    return { removed: false, path: normalizedPath };
+  }
+
+  delete config.mcpServers['vibeguard'];
+
+  if (Object.keys(config.mcpServers).length === 0) {
+    const { rm } = await import('node:fs/promises');
+    await rm(configPath);
+  } else {
+    await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  }
+
+  return { removed: true, path: normalizedPath };
+}
+
 export async function runInstall(ctx: CommandContext, opts: { platform: string }): Promise<void> {
   const { projectRoot } = ctx;
   const platform = normalizePlatform(opts.platform);
@@ -167,6 +244,10 @@ async function installKiro(projectRoot: string): Promise<void> {
   await mkdir(steeringDir, { recursive: true });
   await writeFile(join(steeringDir, 'vibeguard.md'), STEERING_CONTENT, 'utf-8');
   output.push(`  ${statusIcon('success')} ${brand.success('Created')} ${brand.muted('.kiro/steering/vibeguard.md')}`);
+
+  // Write a real MCP server config so the agent gets live tools, not just instructions.
+  const mcpResult = await writeMcpConfig(projectRoot, join('.kiro', 'settings', 'mcp.json'));
+  output.push(`  ${statusIcon('success')} ${brand.success(mcpResult.action)} ${brand.muted(mcpResult.path)}`);
 
   // Init vibeguard config if not exists
   const configPath = join(projectRoot, '.vibeguard', 'config.json');
@@ -544,6 +625,13 @@ async function uninstallKiro(projectRoot: string): Promise<void> {
     output.push(`  ${statusIcon('success')} ${brand.success('Removed')} ${brand.muted('.kiro/steering/vibeguard.md')}`);
   } catch {
     output.push(`  ${statusIcon('info')} ${brand.muted('Steering file not found (already removed)')}`);
+  }
+
+  const mcpResult = await removeMcpConfig(projectRoot, join('.kiro', 'settings', 'mcp.json'));
+  if (mcpResult.removed) {
+    output.push(`  ${statusIcon('success')} ${brand.success('Removed vibeguard server from')} ${brand.muted(mcpResult.path)}`);
+  } else {
+    output.push(`  ${statusIcon('info')} ${brand.muted('No vibeguard MCP entry found (already removed)')}`);
   }
 
   output.push('');

@@ -18,6 +18,7 @@ describe('Property 38: Git Command Safety', () => {
       'isWorkingTreeClean',
       'createBranch',
       'commitAll',
+      'getChangedFiles',
     ];
 
     for (const method of methods) {
