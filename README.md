@@ -39,10 +39,34 @@ noise, fewer tokens, and higher accuracy.
 flowchart LR
   A[Your repo] --> B[VibeGuard<br/>local analysis]
   B --> C[Dependency graph]
-  B --> D[Security findings]
+  B --> D[Security + audit]
   B --> E[Dead-code plan]
   C --> F[Focused context pack]
+  C --> H[Interactive graph.html]
+  D --> I[0-100 score + SBOM]
   F --> G[AI reads 5-15<br/>relevant files]
+  F --> J[Caveman: terse replies]
+  G --> K[Cheaper + sharper<br/>AI answers]
+  J --> K
+```
+
+**The full local pipeline, end to end:**
+
+```mermaid
+flowchart TD
+  repo[Your repo] --> map[map: build graph]
+  map --> graphjson[(graph.json)]
+  map --> tags[tags + importance]
+  graphjson --> understand[query / explain / affected / path / flows / search]
+  graphjson --> graphhtml[graph: interactive HTML]
+  graphjson --> pack[pack: focused context]
+  repo --> sec[security / attack / audit]
+  sec --> score[health + security score]
+  pack --> mcp[MCP server: live agent tools]
+  understand --> mcp
+  caveman[caveman on] --> agent[AI assistant]
+  pack --> agent
+  mcp --> agent
 ```
 
 > **Core promise:** graph, security, dead-code, health, query, packaging, and Caveman
@@ -132,7 +156,46 @@ vibeguard map      # build/refresh graph data
 vibeguard graph    # render + open the interactive HTML view
 ```
 
-**What you get in the view**
+### How `map` builds the graph (under the hood)
+
+`map` is the engine everything else reads from. One run does this:
+
+1. **Resolve the file set** — glob the project with your include globs minus the ignore
+   set (`node_modules`, `dist`, `.vibeguard`, tests, `takeinspiration`, etc.).
+2. **Hash every file** — SHA-256 into `analysis-meta.json`. Files whose hash matches the
+   previous run are **skipped** (incremental); only changed/new files re-parse.
+3. **Parse per language:**
+   - **TS/JS** → full `ts-morph` AST: import declarations, dynamic `import()`, exports,
+     and semantic usage (function calls, type references).
+   - **Python / Go / Java / Markdown** → portable parser: imports, exports, declared
+     symbols, package scope, same-package links, doc references.
+4. **Resolve specifiers to real nodes** — ESM `./user.js` → `src/user.ts`, bare-dir →
+   `index.ts`, so edges actually connect in TS ESM projects.
+5. **Build edges with confidence:**
+   | Edge type | Meaning | Confidence label |
+   | --- | --- | --- |
+   | `import` | explicit import statement | `EXTRACTED` (1.0) |
+   | `call` | a function from another file is called | `INFERRED` / `AMBIGUOUS` |
+   | `type-reference` | a type from another file is used | `INFERRED` / `AMBIGUOUS` |
+6. **Compute dependents** — the inverse of imports (who depends on me).
+7. **Track add/remove** — new files become nodes, deleted files are pruned, and the run
+   reports `+added` / `-removed` deltas.
+8. **Score importance + tags** — dependents, imports, git activity, and route signals feed
+   an importance score; tags (route/framework/export/path) are attached per node.
+9. **Persist + render** — writes `graph.json`, `analysis-meta.json`, the interactive
+   `graph.html`, and a `GRAPH_REPORT.md` architecture summary.
+
+**Outputs of a `map` run**
+
+| File | Contents |
+| --- | --- |
+| `.vibeguard/graph.json` | Nodes (file, imports, exports, dependents, edges) + top-level edge list |
+| `.vibeguard/analysis-meta.json` | Per-file SHA-256 hashes, build timestamp, parse errors |
+| `.vibeguard/graph.html` | Interactive vis-network visualization |
+| `.vibeguard/GRAPH_REPORT.md` | God nodes, communities, surprising connections |
+| `.vibeguard/tags.json` · `importance.json` | Per-node tags + importance scores |
+
+### What you get in the visual view
 
 - **2D force-directed layout** (vis-network) — nodes auto-arrange by connectivity
 - **Group colors** — core, commands, engines, storage, utils, tests
@@ -141,33 +204,30 @@ vibeguard graph    # render + open the interactive HTML view
 - **⏸ Play / ▶ Pause** — freeze or resume the physics simulation
 - **Light, readable theme** — dark labels with white stroke, soft-grey edges
 - **Degree-scaled nodes** — busier files render larger (god-node spotting)
+- **Rich tooltips** — file path, import/dependent counts, exported symbols per node
 
-**Scales to large projects (~500 files)**
+### Live example — a real ~500-file project graph
 
-The renderer embeds the graph data directly and uses force-atlas physics with
-stabilization, so it stays responsive on big repos:
+This is an actual VibeGuard graph render (500 files, ~900 edges), produced by the same
+`graph.html` generator the CLI ships:
 
-- Incremental builds (SHA-256 hashing) mean only changed files re-parse — a 500-file
-  repo re-maps in seconds after the first build.
-- The HTML is **one static file** (vis-network from CDN) — no server, share it anywhere.
-- Pause physics on very large graphs for instant pan/zoom, then search to jump to a file.
-- `GRAPH_REPORT.md` complements the visual with **god nodes**, **communities**, and
-  **surprising connections** for when 500 dots is too many to eyeball.
+<p align="center">
+  <a href="docs/assets/graph-demo.html">
+    <img src="docs/assets/graph-demo.png" alt="VibeGuard interactive dependency graph — 500-file demo project" width="100%" />
+  </a>
+</p>
 
-> Tip: for a huge graph, run `vibeguard map` then open `.vibeguard/graph.html` directly,
-> hit **⏸ Pause**, and use **🔍 Search** to navigate instead of scanning visually.
+<p align="center">
+  <em>Click the image to open the fully interactive version</em> —
+  drag nodes, search files, hover to highlight connections, Play/Pause physics.
+  <a href="docs/assets/graph-demo.html"><strong>▶ Open interactive graph</strong></a>
+</p>
 
-```mermaid
-flowchart TD
-  subgraph Graph view
-    direction LR
-    core((core)) --> engines((engines))
-    core --> commands((commands))
-    engines --> storage((storage))
-    commands --> engines
-    engines --> utils((utils))
-  end
-```
+> GitHub READMEs can't run live JavaScript, so the image above is a snapshot. Generate
+> your own interactive graph any time with `vibeguard map && vibeguard graph` — it opens
+> `.vibeguard/graph.html` in your browser. For very large graphs, hit **⏸ Pause** and use
+> **🔍 Search** to jump to a file; `GRAPH_REPORT.md` lists god nodes & communities when the
+> dots are too many to eyeball.
 
 ---
 
@@ -250,7 +310,7 @@ An AI agent can also toggle it live via the MCP `set_caveman` tool, and `vibegua
 | Command | Purpose |
 | --- | --- |
 | `vibeguard init` | Initialize `.vibeguard/config.json` |
-| `vibeguard map` | Build graph, tags, importance, HTML & report |
+| `vibeguard map` | Build the dependency graph + tags + importance + `graph.html` + report (incremental, SHA-256 change detection, add/remove deltas) |
 | `vibeguard graph --no-open` | Generate the interactive HTML graph |
 | `vibeguard query "question"` | Ask graph-backed questions, no full-file reads |
 | `vibeguard path <a> <b>` | Shortest path between two nodes |
