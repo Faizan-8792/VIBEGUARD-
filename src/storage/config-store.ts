@@ -44,6 +44,10 @@ export const DEFAULT_CONFIG: VibeguardConfig = {
     'dist/**',
     'build/**',
     'coverage/**',
+    'vendor/**',
+    'third_party/**',
+    'third-party/**',
+    'takeinspiration/**',
     '**/*.test.ts',
     '**/*.test.tsx',
     '**/*.test.js',
@@ -70,7 +74,13 @@ export const DEFAULT_CONFIG: VibeguardConfig = {
   limits: { maxFilesPerRun: 200 },
 };
 
-const DEFAULT_EXTENSIONS = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs'];
+const DEFAULT_EXTENSIONS = [
+  '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs',
+  '**/*.py', '**/*.pyw',
+  '**/*.go',
+  '**/*.java',
+  '**/*.md', '**/*.mdx',
+];
 
 function validateConfig(data: unknown): VibeguardConfig {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {

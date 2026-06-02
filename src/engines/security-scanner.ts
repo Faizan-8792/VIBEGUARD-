@@ -1,9 +1,11 @@
 import { readFile, access } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { hashString } from '../utils/hash-utils.js';
+import { getPatternsForFile } from './polyglot-security.js';
 import type { ResolvedConfig } from '../storage/config-store.js';
+import type { Severity } from './security-types.js';
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type { Severity } from './security-types.js';
 
 export interface SecurityIssue {
   id: string;
@@ -63,7 +65,7 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
   {
     name: 'AWS Secret Access Key',
     detectorCode: '004',
-    regex: /(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])/g,
+    regex: /(?:aws_secret_access_key|aws_secret_key|aws_secret|secret_access_key)['"]?\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/gi,
     category: 'hard-coded-secret',
     severity: 'high',
     message: 'Possible hard-coded AWS Secret Access Key detected',
@@ -81,7 +83,7 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
   {
     name: 'Database Connection URL',
     detectorCode: '006',
-    regex: /(?:postgres|mysql|mongodb)(?:ql)?:\/\/[^\s'"]+/g,
+    regex: /(?:postgres|mysql|mongodb)(?:ql)?:\/\/[^\s'":/]+:[^\s'":/@]+@[^\s'"]+/g,
     category: 'hard-coded-secret',
     severity: 'high',
     message: 'Hard-coded database connection URL detected',
@@ -140,7 +142,8 @@ const FRAMEWORK_PATTERNS: DetectorPattern[] = [
 export async function scanSecurity(
   projectRoot: string,
   files: string[],
-  config: ResolvedConfig
+  config: ResolvedConfig,
+  onProgress?: (current: number, total: number) => void
 ): Promise<SecurityScanResult> {
   const issues: SecurityIssue[] = [];
 
@@ -148,44 +151,34 @@ export async function scanSecurity(
   const envIssues = await checkGitignoreGap(projectRoot);
   issues.push(...envIssues);
 
+  // Compile custom regex detectors once — they are file-independent.
+  const customDetectors = compileCustomDetectors(config.security.customSecretPatterns);
+
   // Scan files for secrets and framework misuse
+  let scanned = 0;
   for (const file of files) {
-    // Skip test files for secret detection
-    if (file.match(/\.(test|spec)\./)) continue;
+    scanned++;
+    // Report progress periodically so large scans show a moving percentage
+    if (onProgress && (scanned === 1 || scanned % 10 === 0 || scanned === files.length)) {
+      onProgress(scanned, files.length);
+    }
+    if (isTestFile(file)) continue;
 
     try {
       const content = await readFile(resolve(projectRoot, file), 'utf-8');
       const lines = content.split('\n');
 
-      // Built-in secret patterns
-      for (const pattern of BUILT_IN_PATTERNS) {
-        const matches = findPatternMatches(content, lines, pattern, file);
-        issues.push(...matches);
-      }
+      // Run all applicable detectors in a stable order so issue IDs and
+      // ordering stay deterministic across runs.
+      const detectors: DetectorPattern[] = [
+        ...BUILT_IN_PATTERNS,
+        ...FRAMEWORK_PATTERNS,
+        ...customDetectors,
+        ...getPatternsForFile(file),
+      ];
 
-      // Framework misuse patterns
-      for (const pattern of FRAMEWORK_PATTERNS) {
-        const matches = findPatternMatches(content, lines, pattern, file);
-        issues.push(...matches);
-      }
-
-      // Custom patterns from config
-      for (const customPattern of config.security.customSecretPatterns) {
-        try {
-          const regex = new RegExp(customPattern, 'g');
-          const detector: DetectorPattern = {
-            name: 'Custom pattern',
-            detectorCode: '099',
-            regex,
-            category: 'custom-secret',
-            severity: 'high',
-            message: `Custom secret pattern matched: ${customPattern}`,
-          };
-          const matches = findPatternMatches(content, lines, detector, file);
-          issues.push(...matches);
-        } catch {
-          // Invalid regex, skip
-        }
+      for (const detector of detectors) {
+        issues.push(...findPatternMatches(content, lines, detector, file));
       }
     } catch {
       // File unreadable, skip
@@ -198,6 +191,48 @@ export async function scanSecurity(
   }
 
   return { issues, counts };
+}
+
+/**
+ * Returns true for files that follow test-naming conventions across the
+ * supported languages (TS/JS, Go, Python, Java) and should be excluded from
+ * secret detection to avoid flagging fixtures and sample data.
+ */
+function isTestFile(file: string): boolean {
+  return (
+    /\.(test|spec)\./.test(file) ||
+    /_test\.(go|py)$/.test(file) ||
+    /(^|\/)test_[^/]+\.py$/.test(file) ||
+    /Tests?\.java$/.test(file) ||
+    file.includes('/__tests__/') ||
+    file.includes('/testdata/') ||
+    file.includes('/fixtures/')
+  );
+}
+
+/**
+ * Compiles user-supplied custom secret regexes into detectors, skipping any
+ * pattern that is not a valid regular expression.
+ */
+function compileCustomDetectors(customPatterns: string[]): DetectorPattern[] {
+  const detectors: DetectorPattern[] = [];
+
+  for (const source of customPatterns) {
+    try {
+      detectors.push({
+        name: 'Custom pattern',
+        detectorCode: '099',
+        regex: new RegExp(source, 'g'),
+        category: 'custom-secret',
+        severity: 'high',
+        message: `Custom secret pattern matched: ${source}`,
+      });
+    } catch {
+      // Invalid regex, skip
+    }
+  }
+
+  return detectors;
 }
 
 function findPatternMatches(

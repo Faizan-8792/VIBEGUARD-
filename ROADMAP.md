@@ -5,74 +5,74 @@ Goal: Beat Graphify in usability, cost-efficiency, and feature coverage.
 ## Progress Tracker
 
 ### Day 1: Foundation
-- [ ] Interactive HTML graph visualization
-- [ ] npm publish readiness
-- [ ] `vibeguard cursor install`
-- [ ] `vibeguard claude install`
-- [ ] Build, test, push
+- [x] Interactive HTML graph visualization
+- [x] npm publish readiness
+- [x] `vibeguard cursor install`
+- [x] `vibeguard claude install`
+- [x] Build, test, push
 
 ### Day 2: Platforms + Graph Depth
-- [ ] `vibeguard copilot install`
-- [ ] `vibeguard gemini install`
-- [ ] `vibeguard aider install`
-- [ ] Semantic edges (function calls, not just imports)
-- [ ] Confidence scoring on edges
+- [x] `vibeguard copilot install`
+- [x] `vibeguard gemini install`
+- [x] `vibeguard aider install`
+- [x] Semantic edges (function calls, not just imports)
+- [x] Confidence scoring on edges
 
 ### Day 3: Python Support
-- [ ] Python import parser (regex-based, no tree-sitter needed)
-- [ ] Python dead code detection
-- [ ] Python security patterns (eval, subprocess, pickle, etc.)
-- [ ] Test with a real Python project
-- [ ] Python file tagging
+- [x] Python import parser (regex-based, no tree-sitter needed)
+- [x] Python dead code detection
+- [x] Python security patterns (eval, subprocess, pickle, etc.)
+- [x] Test with a real Python project
+- [x] Python file tagging
 
 ### Day 4: Go Support
-- [ ] Go import parser
-- [ ] Go dead code detection
-- [ ] Go security patterns
-- [ ] Go file tagging
-- [ ] Test with a real Go project
+- [x] Go import parser
+- [x] Go dead code detection
+- [x] Go security patterns
+- [x] Go file tagging
+- [x] Test with a real Go project
 
 ### Day 5: Java Support
-- [ ] Java import parser
-- [ ] Java dead code detection
-- [ ] Java security patterns (SQLi, deserialization, etc.)
-- [ ] Java file tagging
-- [ ] Test with a real Java project
+- [x] Java import parser
+- [x] Java dead code detection
+- [x] Java security patterns (SQLi, deserialization, etc.)
+- [x] Java file tagging
+- [x] Test with a real Java project
 
 ### Day 6: Multimodal — Docs
-- [ ] Markdown file parsing (extract headings, links, concepts)
-- [ ] Link documentation to code files via references
-- [ ] README/docs influence on tagging
-- [ ] Architecture doc extraction
-- [ ] Test with a project containing docs
+- [x] Markdown file parsing (extract headings, links, concepts)
+- [x] Link documentation to code files via references
+- [x] README/docs influence on tagging
+- [x] Architecture doc extraction
+- [x] Test with a project containing docs
 
 ### Day 7: Multimodal — PDF
-- [ ] PDF text extraction (pdf-parse)
-- [ ] Concept extraction from PDF content
-- [ ] Link PDF concepts to graph nodes
-- [ ] `vibeguard add <file.pdf>` command
-- [ ] Test with technical papers/specs
+- [x] PDF text extraction (pdf-parse)
+- [x] Concept extraction from PDF content
+- [x] Link PDF concepts to graph nodes
+- [x] `vibeguard add <file.pdf>` command
+- [x] Test with technical papers/specs
 
 ### Day 8: Graph Intelligence
-- [ ] Community detection (connected component clustering)
-- [ ] God-node identification (highest degree nodes)
-- [ ] Surprising connections (cross-community edges)
-- [ ] GRAPH_REPORT.md auto-generation
-- [ ] Suggested questions from graph structure
+- [x] Community detection (connected component clustering)
+- [x] God-node identification (highest degree nodes)
+- [x] Surprising connections (cross-community edges)
+- [x] GRAPH_REPORT.md auto-generation
+- [x] Suggested questions from graph structure
 
 ### Day 9: Query Engine
-- [ ] `vibeguard query "what connects X to Y?"`
-- [ ] `vibeguard path A B` (shortest path between nodes)
-- [ ] `vibeguard explain <node>` (plain-language explanation)
-- [ ] Query result token budgeting
-- [ ] Test query accuracy
+- [x] `vibeguard query "what connects X to Y?"`
+- [x] `vibeguard path A B` (shortest path between nodes)
+- [x] `vibeguard explain <node>` (plain-language explanation)
+- [x] Query result token budgeting
+- [x] Test query accuracy
 
 ### Day 10: Watch + Auto
-- [ ] `vibeguard watch` — file watcher with auto-rebuild
-- [ ] Post-commit hook auto-graph-update (code changes: instant, docs: notify)
-- [ ] Incremental tag/importance refresh
-- [ ] Performance optimization for large projects
-- [ ] Benchmark: compare token usage VibeGuard vs Graphify on same project
+- [x] `vibeguard watch` — file watcher with auto-rebuild
+- [x] Post-commit hook auto-graph-update (code changes: instant, docs: notify)
+- [x] Incremental tag/importance refresh
+- [x] Performance optimization for large projects
+- [x] Benchmark: compare token usage VibeGuard vs Graphify on same project
 
 ## Metrics to Beat
 

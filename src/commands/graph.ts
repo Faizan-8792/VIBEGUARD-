@@ -1,4 +1,4 @@
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 import { loadGraph, buildGraph } from '../engines/graph-builder.js';
 import { generateHTMLGraph } from '../engines/html-graph-generator.js';
 import { resolveFiles } from '../utils/glob-resolver.js';

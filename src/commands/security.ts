@@ -6,8 +6,8 @@ import { SafetyContext } from '../utils/safety.js';
 import { createGitUtils } from '../utils/git-utils.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import { emitJson } from '../utils/json-output.js';
-import { header, severityBadge, filePath, divider, summaryLine, statusIcon, brand, table, type TableColumn } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import { header, severityBadge, filePath, divider, summaryLine, statusIcon, brand } from '../utils/ui.js';
+import type { CommandContext } from '../context.js';
 
 export interface SecurityCommandOptions {
   fix?: string;
@@ -22,7 +22,9 @@ export async function runSecurity(ctx: CommandContext, opts: SecurityCommandOpti
   logger.startSpinner('Scanning for security issues...');
 
   const files = await resolveFiles(projectRoot, config.effectiveInclude, config.effectiveSkipSet);
-  const result = await scanSecurity(projectRoot, files, config);
+  const result = await scanSecurity(projectRoot, files, config, (current, total) => {
+    logger.progress(current, total, 'scanning files...');
+  });
 
   logger.stopSpinner(true);
 
@@ -35,8 +37,9 @@ export async function runSecurity(ctx: CommandContext, opts: SecurityCommandOpti
       projectRoot,
     });
 
-    if (opts.gitSafe) {
-      const gitUtils = createGitUtils();
+    const gitUtils = opts.gitSafe ? createGitUtils() : null;
+
+    if (gitUtils) {
       await safety.enforceGitSafe(gitUtils, 'security');
     }
 
@@ -61,8 +64,7 @@ export async function runSecurity(ctx: CommandContext, opts: SecurityCommandOpti
       }
     }
 
-    if (opts.gitSafe && !opts.dryRun) {
-      const gitUtils = createGitUtils();
+    if (gitUtils && !opts.dryRun) {
       await safety.commitGitSafe(gitUtils, 'security');
     }
   }

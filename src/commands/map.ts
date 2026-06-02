@@ -1,10 +1,10 @@
-import { buildGraph } from '../engines/graph-builder.js';
+import { buildGraph, GRAPH_SCHEMA_VERSION } from '../engines/graph-builder.js';
 import { generateHTMLGraph } from '../engines/html-graph-generator.js';
 import { generateGraphReport } from '../engines/graph-report-generator.js';
 import { resolveFiles } from '../utils/glob-resolver.js';
 import { emitJson } from '../utils/json-output.js';
 import { header, keyValue, statusIcon, brand, divider } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 
 export async function runMap(ctx: CommandContext): Promise<void> {
   const { config, logger, projectRoot, options } = ctx;
@@ -19,10 +19,10 @@ export async function runMap(ctx: CommandContext): Promise<void> {
   logger.stopSpinner(true);
 
   // Generate HTML visualization + report
-  const graphData = { schemaVersion: '1.0.0', nodes: Object.fromEntries(result.nodes) };
+  const graphData = { schemaVersion: GRAPH_SCHEMA_VERSION, nodes: Object.fromEntries(result.nodes) };
 
   logger.startSpinner('Generating report & visualization...');
-  const [htmlPath, report] = await Promise.all([
+  const [, report] = await Promise.all([
     generateHTMLGraph(projectRoot, graphData),
     generateGraphReport(projectRoot, graphData),
   ]);

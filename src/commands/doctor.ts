@@ -1,14 +1,16 @@
 import { analyzeHealth } from '../engines/health-analyzer.js';
 import { emitJson } from '../utils/json-output.js';
-import { header, scoreBar, keyValue, divider, summaryLine, statusIcon, severityBadge, brand, box } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import { header, scoreBar, keyValue, divider, summaryLine, statusIcon, brand } from '../utils/ui.js';
+import type { CommandContext } from '../context.js';
 
 export async function runDoctor(ctx: CommandContext): Promise<void> {
   const { config, logger, projectRoot, options } = ctx;
 
   logger.startSpinner('Analyzing project health...');
 
-  const result = await analyzeHealth(config, projectRoot);
+  const result = await analyzeHealth(config, projectRoot, (percent, label) => {
+    logger.updateSpinner(`[${percent}%] ${label}`);
+  });
 
   logger.stopSpinner(true);
 

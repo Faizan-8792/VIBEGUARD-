@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: 'devcontainers'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+  - package-ecosystem: 'npm'
+    directories:
+      - '/'
+      - '/client/'
+      - '/server/'
+      - '/extensions/vscode/'
+    schedule:
+      interval: 'weekly'
+    ignore:
+      ## Ignore all updates for 'zod' as our 'zod' version must match the
+      ## version of 'zod' used by the '@modelcontextprotocol/sdk' dependency.
+      - dependency-name: 'zod'
+      ## Ignore all updates for '@types/vscode' as its version tracks VS Code
+      ## minor releases and any bump would expose APIs newer than the floor
+      ## declared by 'engines.vscode' in 'extensions/vscode/package.json'.
+      ## Bump this manually together with 'engines.vscode' when raising the
+      ## minimum supported VS Code version.
+      - dependency-name: '@types/vscode'
+    versioning-strategy: 'increase'
+    groups:
+      all-npm-dependencies:
+        patterns:
+          - '*'

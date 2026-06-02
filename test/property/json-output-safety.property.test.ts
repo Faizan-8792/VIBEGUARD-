@@ -1,8 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { wrapJsonOutput, SCHEMA_VERSION } from '../../src/utils/json-output.js';
 import { VibeguardError, ErrorCodes, formatErrorJson } from '../../src/utils/errors.js';
 import { createLogger } from '../../src/utils/logger.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+function muteLoggerOutput(): void {
+  vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+}
 
 describe('Property 1: JSON Mode Output Integrity', () => {
   it('wrapJsonOutput always produces valid JSON with schemaVersion', () => {
@@ -105,6 +114,7 @@ describe('Property 3: Structured Error Shape in JSON Mode', () => {
 
 describe('Property 39: Logger Level Filtering', () => {
   it('quiet mode suppresses info and debug', () => {
+    muteLoggerOutput();
     const logger = createLogger({ jsonMode: false, quiet: true, verbose: false, command: 'test' });
     // Logger should exist and not throw
     expect(() => logger.info('test')).not.toThrow();
@@ -114,11 +124,13 @@ describe('Property 39: Logger Level Filtering', () => {
   });
 
   it('verbose mode enables debug', () => {
+    muteLoggerOutput();
     const logger = createLogger({ jsonMode: false, quiet: false, verbose: true, command: 'test' });
     expect(() => logger.debug('test')).not.toThrow();
   });
 
   it('json mode routes warnings to stderr only', () => {
+    muteLoggerOutput();
     const logger = createLogger({ jsonMode: true, quiet: false, verbose: false, command: 'test' });
     expect(() => logger.warn('test')).not.toThrow();
     expect(() => logger.info('test')).not.toThrow();

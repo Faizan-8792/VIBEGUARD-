@@ -1,8 +1,9 @@
 import { select } from '@inquirer/prompts';
 import clipboardy from 'clipboardy';
 import { banner, header, statusIcon, brand, divider, severityBadge, filePath, scoreBar, keyValue, summaryLine } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 import type { SecurityIssue } from '../engines/security-scanner.js';
+import type { ArchitectureDetails, ContextDetails } from '../engines/health-analyzer.js';
 import type { LLMProvider } from '../storage/credentials-store.js';
 
 /**
@@ -105,8 +106,13 @@ async function runSecurityInteractive(ctx: CommandContext): Promise<void> {
   const { resolveFiles } = await import('../utils/glob-resolver.js');
   const { scanSecurity } = await import('../engines/security-scanner.js');
 
+  ctx.logger.startSpinner('[0%] Scanning for security issues...');
   const files = await resolveFiles(ctx.projectRoot, ctx.config.effectiveInclude, ctx.config.effectiveSkipSet);
-  const result = await scanSecurity(ctx.projectRoot, files, ctx.config);
+  const result = await scanSecurity(ctx.projectRoot, files, ctx.config, (current, total) => {
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    ctx.logger.updateSpinner(`[${pct}%] Scanning security (${current}/${total} files)...`);
+  });
+  ctx.logger.stopSpinner(true);
 
   const output: string[] = [];
   output.push(header('Security Scan Results', '🔒'));
@@ -168,7 +174,11 @@ async function runHealthInteractive(ctx: CommandContext): Promise<void> {
   const { analyzeHealth } = await import('../engines/health-analyzer.js');
   const { select: selectPrompt } = await import('@inquirer/prompts');
 
-  const result = await analyzeHealth(ctx.config, ctx.projectRoot);
+  ctx.logger.startSpinner('[1%] Analyzing project health...');
+  const result = await analyzeHealth(ctx.config, ctx.projectRoot, (percent, label) => {
+    ctx.logger.updateSpinner(`[${percent}%] ${label}`);
+  });
+  ctx.logger.stopSpinner(true);
 
   const output: string[] = [];
   output.push(header('Project Health Report', '🏥'));
@@ -200,6 +210,12 @@ async function runHealthInteractive(ctx: CommandContext): Promise<void> {
     if (result.summary.deadCode !== null && result.summary.deadCode < 100) {
       choices.push({ name: '🧹  Fix Dead Code', value: 'dead' });
     }
+    if (result.summary.architecture !== null && result.summary.architecture < 100) {
+      choices.push({ name: '🏗️   Fix Architecture (cycles & god-files)', value: 'architecture' });
+    }
+    if (result.summary.contextEfficiency !== null && result.summary.contextEfficiency < 100) {
+      choices.push({ name: '🧠  Fix Context Efficiency (heavy imports)', value: 'context' });
+    }
     choices.push({ name: '📋  Copy Full Report (for AI chat)', value: 'copy' });
     choices.push({ name: '↩️   Back to menu', value: 'back' });
 
@@ -212,6 +228,10 @@ async function runHealthInteractive(ctx: CommandContext): Promise<void> {
       await runSecurityInteractive(ctx);
     } else if (action === 'dead') {
       await runDeadInteractive(ctx);
+    } else if (action === 'architecture') {
+      await showArchitectureFix(result.architectureDetails);
+    } else if (action === 'context') {
+      await showContextFix(result.contextDetails);
     } else if (action === 'copy') {
       const lines: string[] = [];
       lines.push(`Project Health Score: ${result.summary.projectHealth}/100`);
@@ -233,12 +253,128 @@ async function runHealthInteractive(ctx: CommandContext): Promise<void> {
   }
 }
 
+async function showArchitectureFix(details: ArchitectureDetails): Promise<void> {
+  const { select: selectPrompt } = await import('@inquirer/prompts');
+
+  const output: string[] = [];
+  output.push(header('Architecture Issues', '🏗️'));
+  output.push('');
+
+  if (details.cyclicPairs.length === 0 && details.highFanInFiles.length === 0) {
+    output.push(`  ${statusIcon('success')} ${brand.success('No specific architecture issues found. Score may be affected by other factors.')}`);
+    process.stdout.write(output.join('\n') + '\n');
+    return;
+  }
+
+  if (details.cyclicPairs.length > 0) {
+    output.push(`  ${brand.warning.bold('🔄 Circular dependencies')} ${brand.muted('(files that import each other)')}`);
+    for (const p of details.cyclicPairs) {
+      output.push(`    ${brand.secondary(p.a)} ${brand.muted('⇄')} ${brand.secondary(p.b)}`);
+    }
+    output.push('');
+  }
+
+  if (details.highFanInFiles.length > 0) {
+    output.push(`  ${brand.warning.bold('🏛️ God-files')} ${brand.muted('(too many files depend on these)')}`);
+    for (const f of details.highFanInFiles) {
+      output.push(`    ${brand.secondary(f.file)} ${brand.muted(`(${f.dependents} dependents)`)}`);
+    }
+    output.push('');
+  }
+
+  output.push(divider());
+  output.push(`  ${brand.muted('Fix by: breaking cycles (extract shared code to a third module),')}`);
+  output.push(`  ${brand.muted('and splitting god-files into focused modules.')}`);
+  output.push('');
+  process.stdout.write(output.join('\n') + '\n\n');
+
+  const action = await selectPrompt<string>({
+    message: brand.primary('What would you like to do?'),
+    choices: [
+      { name: '📋  Copy Fix Instructions (for AI chat)', value: 'copy' },
+      { name: '↩️   Back to menu', value: 'back' },
+    ],
+  });
+
+  if (action === 'copy') {
+    const lines: string[] = [];
+    lines.push('Refactor the following architecture issues in my project:\n');
+    if (details.cyclicPairs.length > 0) {
+      lines.push('Circular dependencies (these files import each other — break the cycle by extracting shared code into a new module, or inverting one dependency):');
+      for (const p of details.cyclicPairs) {
+        lines.push(`- ${p.a}  <->  ${p.b}`);
+      }
+      lines.push('');
+    }
+    if (details.highFanInFiles.length > 0) {
+      lines.push('God-files (too many modules depend on these — split them into smaller, focused modules so changes have a narrower blast radius):');
+      for (const f of details.highFanInFiles) {
+        lines.push(`- ${f.file} (${f.dependents} dependents)`);
+      }
+      lines.push('');
+    }
+    lines.push('For each: propose a concrete refactor that preserves behavior, and update all imports.');
+    await copyToClipboard(lines.join('\n'));
+  }
+}
+
+async function showContextFix(details: ContextDetails): Promise<void> {
+  const { select: selectPrompt } = await import('@inquirer/prompts');
+
+  const output: string[] = [];
+  output.push(header('Context Efficiency', '🧠'));
+  output.push('');
+  output.push(keyValue('Avg imports/file', brand.info(String(details.avgImports))));
+  output.push('');
+
+  if (details.heavyImportFiles.length === 0) {
+    output.push(`  ${statusIcon('success')} ${brand.success('No heavy-import files found. Reduce average imports to improve the score.')}`);
+    process.stdout.write(output.join('\n') + '\n');
+    return;
+  }
+
+  output.push(`  ${brand.warning.bold('📦 Heavy-import files')} ${brand.muted('(high import count = large context to load)')}`);
+  for (const f of details.heavyImportFiles) {
+    output.push(`    ${brand.secondary(f.file)} ${brand.muted(`(${f.imports} imports)`)}`);
+  }
+  output.push('');
+  output.push(divider());
+  output.push(`  ${brand.muted('Fix by: grouping related imports behind a barrel/facade module,')}`);
+  output.push(`  ${brand.muted('removing unused imports, and splitting large files by responsibility.')}`);
+  output.push('');
+  process.stdout.write(output.join('\n') + '\n\n');
+
+  const action = await selectPrompt<string>({
+    message: brand.primary('What would you like to do?'),
+    choices: [
+      { name: '📋  Copy Fix Instructions (for AI chat)', value: 'copy' },
+      { name: '↩️   Back to menu', value: 'back' },
+    ],
+  });
+
+  if (action === 'copy') {
+    const lines: string[] = [];
+    lines.push('Reduce import bloat (context efficiency) in my project:\n');
+    lines.push(`Average imports per file: ${details.avgImports}`);
+    lines.push('');
+    lines.push('These files have the most imports — split them by responsibility, remove unused imports, or introduce a facade/barrel module for related dependencies:');
+    for (const f of details.heavyImportFiles) {
+      lines.push(`- ${f.file} (${f.imports} imports)`);
+    }
+    lines.push('');
+    lines.push('Keep behavior identical and update all references.');
+    await copyToClipboard(lines.join('\n'));
+  }
+}
+
 async function runMapInteractive(ctx: CommandContext): Promise<void> {
   const { buildGraph } = await import('../engines/graph-builder.js');
   const { resolveFiles } = await import('../utils/glob-resolver.js');
 
+  ctx.logger.startSpinner('Building dependency graph...');
   const files = await resolveFiles(ctx.projectRoot, ctx.config.effectiveInclude, ctx.config.effectiveSkipSet);
   const result = await buildGraph(ctx.projectRoot, files, ctx.config, ctx.logger);
+  ctx.logger.stopSpinner(true);
 
   const output: string[] = [];
   output.push(header('Dependency Graph', '🗺️'));
@@ -417,6 +553,8 @@ async function runReportInteractive(ctx: CommandContext): Promise<void> {
   const { resolveFiles } = await import('../utils/glob-resolver.js');
   const { scanSecurity } = await import('../engines/security-scanner.js');
 
+  ctx.logger.startSpinner('Generating project report...');
+
   const output: string[] = [];
   output.push(header('Project Report', '📊'));
   output.push('');
@@ -543,6 +681,7 @@ async function runReportInteractive(ctx: CommandContext): Promise<void> {
   output.push(`  ${brand.muted('Generated by VibeGuard')} ${brand.muted(`v${projectVersion}`)}`);
   output.push('');
 
+  ctx.logger.stopSpinner(true);
   process.stdout.write(output.join('\n') + '\n');
 }
 
@@ -554,7 +693,9 @@ async function runAttackInteractive(ctx: CommandContext): Promise<void> {
   const { select: selectPrompt } = await import('@inquirer/prompts');
 
   const files = await resolveFiles(ctx.projectRoot, ctx.config.effectiveInclude, ctx.config.effectiveSkipSet);
+  ctx.logger.startSpinner('Scanning for cyberattack vectors...');
   const result = await scanAttacks(ctx.projectRoot, files, ctx.config);
+  ctx.logger.stopSpinner(true);
 
   const output: string[] = [];
   output.push(header('Cyberattack Proof Scan', '🛡️'));

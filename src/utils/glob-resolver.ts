@@ -1,4 +1,4 @@
-import { readdir, stat, lstat, realpath } from 'node:fs/promises';
+import { readdir, stat, realpath } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import picomatch from 'picomatch';
 

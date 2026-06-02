@@ -7,8 +7,8 @@ import { SafetyContext } from '../utils/safety.js';
 import { createGitUtils } from '../utils/git-utils.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import { emitJson } from '../utils/json-output.js';
-import { header, keyValue, divider, summaryLine, statusIcon, filePath, brand, table, type TableColumn } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import { header, divider, summaryLine, statusIcon, filePath, brand } from '../utils/ui.js';
+import type { CommandContext } from '../context.js';
 
 export interface CleanCommandOptions {
   plan: boolean;
@@ -23,6 +23,57 @@ interface CleanupPlan {
   schemaVersion: string;
   createdAt: string;
   candidates: DeadCodeCandidate[];
+}
+
+type DeadCodeScanResult = Awaited<ReturnType<typeof scanDeadCode>>;
+
+const MAX_LISTED_CANDIDATES = 20;
+
+function candidateIcon(kind: DeadCodeCandidate['kind']): string {
+  if (kind === 'file') return '📄';
+  if (kind === 'export') return '📤';
+  return '📥';
+}
+
+function importanceColor(importance: number): 'success' | 'warning' | 'danger' {
+  if (importance <= 2) return 'success';
+  if (importance <= 5) return 'warning';
+  return 'danger';
+}
+
+function renderPlanOutput(result: DeadCodeScanResult): string {
+  const output: string[] = [header('Dead Code Analysis', '🧹'), ''];
+
+  if (result.warning) {
+    output.push(`  ${statusIcon('warning')} ${brand.warning(result.warning)}`, '');
+    return output.join('\n');
+  }
+
+  output.push(summaryLine([
+    { label: 'Unused Files', value: result.summary.unusedFiles, color: result.summary.unusedFiles > 0 ? 'warning' : 'success' },
+    { label: 'Unused Exports', value: result.summary.unusedExports, color: result.summary.unusedExports > 0 ? 'warning' : 'success' },
+    { label: 'Duplicates', value: result.summary.duplicateComponents, color: 'muted' },
+  ]));
+  output.push('');
+
+  if (result.candidates.length > 0) {
+    output.push(divider(), '', `  ${brand.muted.bold('Candidates (sorted by importance):')}`, '');
+
+    for (const c of result.candidates.slice(0, MAX_LISTED_CANDIDATES)) {
+      output.push(`  ${candidateIcon(c.kind)} ${filePath(c.path)} ${brand[importanceColor(c.importance)](`imp:${c.importance}`)}`);
+    }
+
+    if (result.candidates.length > MAX_LISTED_CANDIDATES) {
+      output.push(`  ${brand.muted(`  ... and ${result.candidates.length - MAX_LISTED_CANDIDATES} more`)}`);
+    }
+    output.push('');
+  }
+
+  output.push(`  ${statusIcon('success')} ${brand.success('Plan saved to')} ${brand.muted('.vibeguard/cleanup-plan.json')}`);
+  output.push(`  ${brand.muted('Run with --apply to move dead files to trash')}`);
+  output.push('');
+
+  return output.join('\n');
 }
 
 export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): Promise<void> {
@@ -42,7 +93,7 @@ export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): 
 
   const graphNodes = new Map(Object.entries(graphData.nodes));
 
-  if (opts.plan || (!opts.apply && !opts.plan)) {
+  if (opts.plan || !opts.apply) {
     // Generate plan
     logger.startSpinner('Scanning for dead code...');
 
@@ -69,48 +120,7 @@ export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): 
         ...(result.warning ? { warning: result.warning } : {}),
       });
     } else {
-      const output: string[] = [];
-
-      output.push(header('Dead Code Analysis', '🧹'));
-      output.push('');
-
-      if (result.warning) {
-        output.push(`  ${statusIcon('warning')} ${brand.warning(result.warning)}`);
-        output.push('');
-        process.stdout.write(output.join('\n') + '\n');
-        return;
-      }
-
-      output.push(summaryLine([
-        { label: 'Unused Files', value: result.summary.unusedFiles, color: result.summary.unusedFiles > 0 ? 'warning' : 'success' },
-        { label: 'Unused Exports', value: result.summary.unusedExports, color: result.summary.unusedExports > 0 ? 'warning' : 'success' },
-        { label: 'Duplicates', value: result.summary.duplicateComponents, color: 'muted' },
-      ]));
-      output.push('');
-
-      if (result.candidates.length > 0) {
-        output.push(divider());
-        output.push('');
-        output.push(`  ${brand.muted.bold('Candidates (sorted by importance):')}`);
-        output.push('');
-
-        for (const c of result.candidates.slice(0, 20)) {
-          const kindIcon = c.kind === 'file' ? '📄' : c.kind === 'export' ? '📤' : '📥';
-          const impColor = c.importance <= 2 ? 'success' : c.importance <= 5 ? 'warning' : 'danger';
-          output.push(`  ${kindIcon} ${filePath(c.path)} ${brand[impColor](`imp:${c.importance}`)}`);
-        }
-
-        if (result.candidates.length > 20) {
-          output.push(`  ${brand.muted(`  ... and ${result.candidates.length - 20} more`)}`);
-        }
-        output.push('');
-      }
-
-      output.push(`  ${statusIcon('success')} ${brand.success('Plan saved to')} ${brand.muted('.vibeguard/cleanup-plan.json')}`);
-      output.push(`  ${brand.muted('Run with --apply to move dead files to trash')}`);
-      output.push('');
-
-      process.stdout.write(output.join('\n') + '\n');
+      process.stdout.write(renderPlanOutput(result) + '\n');
     }
     return;
   }
@@ -145,8 +155,9 @@ export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): 
       projectRoot,
     });
 
-    if (opts.gitSafe) {
-      const gitUtils = createGitUtils();
+    const gitUtils = opts.gitSafe ? createGitUtils() : null;
+
+    if (gitUtils) {
       await safety.enforceGitSafe(gitUtils, 'clean');
     }
 
@@ -173,6 +184,7 @@ export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): 
     const trashStore = new TrashStoreImpl(projectRoot);
     let movedCount = 0;
 
+    logger.startSpinner(`Moving ${fileCandidates.length} files to trash...`);
     for (const candidate of fileCandidates) {
       try {
         // trashStore.move expects a path RELATIVE to projectRoot
@@ -183,14 +195,15 @@ export async function runClean(ctx: CommandContext, opts: CleanCommandOptions): 
           kind: candidate.kind,
         });
         movedCount++;
+        logger.updateSpinner(`Moving files to trash... (${movedCount}/${fileCandidates.length})`);
         logger.debug(`Moved to trash: ${candidate.path}`);
       } catch (err) {
         logger.warn(`Failed to move ${candidate.path}: ${err instanceof Error ? err.message : 'unknown error'}`);
       }
     }
+    logger.stopSpinner(true);
 
-    if (opts.gitSafe) {
-      const gitUtils = createGitUtils();
+    if (gitUtils) {
       await safety.commitGitSafe(gitUtils, 'clean');
     }
 

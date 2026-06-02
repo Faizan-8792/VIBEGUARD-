@@ -4,14 +4,20 @@ import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLogger, type Logger } from './utils/logger.js';
+import { createLogger } from './utils/logger.js';
 import { VibeguardError, ErrorCodes, getExitCode, formatErrorJson, formatErrorTerminal } from './utils/errors.js';
-import { loadConfig, type ResolvedConfig } from './storage/config-store.js';
+import { loadConfig } from './storage/config-store.js';
 import { runInit } from './commands/init.js';
 import { banner, quickStart } from './utils/ui.js';
+import type { GlobalOptions, CommandContext } from './context.js';
 
 // Re-export the programmatic API so it's reachable from the entrypoint
 export { runCommand, generateContextForEditor, serializeContextPackageForAgent } from './api.js';
+
+// Re-export the command context contract so existing importers of `../cli.js`
+// keep working. The canonical source is ./context.js, which breaks the
+// entrypoint↔commands dependency cycle.
+export type { GlobalOptions, CommandContext } from './context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,23 +30,6 @@ function getVersion(): string {
   } catch {
     return '0.0.0';
   }
-}
-
-export interface GlobalOptions {
-  json: boolean;
-  cwd: string;
-  include: string[];
-  exclude: string[];
-  config: string | undefined;
-  verbose: boolean;
-  quiet: boolean;
-}
-
-export interface CommandContext {
-  options: GlobalOptions;
-  config: ResolvedConfig;
-  logger: Logger;
-  projectRoot: string;
 }
 
 async function createContext(opts: GlobalOptions, commandName: string): Promise<CommandContext> {
@@ -325,6 +314,48 @@ function setupProgram(): Command {
       else throw new VibeguardError(ErrorCodes.UNKNOWN_COMMAND, `Unknown action. Use: vibeguard claude install | uninstall`);
     });
 
+  // copilot command
+  program
+    .command('copilot')
+    .description('Install/uninstall VibeGuard for GitHub Copilot')
+    .argument('<action>', 'Action: install, uninstall')
+    .action(async (action) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'install');
+      const { runInstall, runUninstall } = await import('./commands/install.js');
+      if (action === 'install') await runInstall(ctx, { platform: 'copilot' });
+      else if (action === 'uninstall') await runUninstall(ctx, { platform: 'copilot' });
+      else throw new VibeguardError(ErrorCodes.UNKNOWN_COMMAND, `Unknown action. Use: vibeguard copilot install | uninstall`);
+    });
+
+  // gemini command
+  program
+    .command('gemini')
+    .description('Install/uninstall VibeGuard for Google Gemini')
+    .argument('<action>', 'Action: install, uninstall')
+    .action(async (action) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'install');
+      const { runInstall, runUninstall } = await import('./commands/install.js');
+      if (action === 'install') await runInstall(ctx, { platform: 'gemini' });
+      else if (action === 'uninstall') await runUninstall(ctx, { platform: 'gemini' });
+      else throw new VibeguardError(ErrorCodes.UNKNOWN_COMMAND, `Unknown action. Use: vibeguard gemini install | uninstall`);
+    });
+
+  // aider command
+  program
+    .command('aider')
+    .description('Install/uninstall VibeGuard for Aider')
+    .argument('<action>', 'Action: install, uninstall')
+    .action(async (action) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'install');
+      const { runInstall, runUninstall } = await import('./commands/install.js');
+      if (action === 'install') await runInstall(ctx, { platform: 'aider' });
+      else if (action === 'uninstall') await runUninstall(ctx, { platform: 'aider' });
+      else throw new VibeguardError(ErrorCodes.UNKNOWN_COMMAND, `Unknown action. Use: vibeguard aider install | uninstall`);
+    });
+
   // install command
   program
     .command('install')
@@ -398,6 +429,93 @@ function setupProgram(): Command {
       const ctx = await createContext(globalOpts, 'hook');
       const { runHook } = await import('./commands/hook.js');
       await runHook(ctx, { action });
+    });
+
+  // query command — graph-powered Q&A (Graphify-like token reduction)
+  program
+    .command('query')
+    .description('Query the dependency graph (answer questions without reading files)')
+    .argument('<question>', 'Question about the codebase')
+    .option('--budget <n>', 'Token budget — caps how many nodes the result returns', parseInt)
+    .action(async (question, cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'query');
+      const { runQuery } = await import('./commands/query.js');
+      await runQuery(ctx, { question, budget: cmdOpts.budget });
+    });
+
+  // path command — shortest path between two nodes
+  program
+    .command('path')
+    .description('Find shortest path between two nodes in the graph')
+    .argument('<source>', 'Source node (file name or symbol)')
+    .argument('<target>', 'Target node (file name or symbol)')
+    .action(async (source, target) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'path');
+      const { runPath } = await import('./commands/query.js');
+      await runPath(ctx, { source, target });
+    });
+
+  // explain command — plain-language node description
+  program
+    .command('explain')
+    .description('Explain a node: its role, connections, and importance')
+    .argument('<node>', 'Node to explain (file name or symbol)')
+    .action(async (node) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'explain');
+      const { runExplain } = await import('./commands/query.js');
+      await runExplain(ctx, { node });
+    });
+
+  // affected command — reverse-impact analysis
+  program
+    .command('affected')
+    .description('Show what would be affected if a node changed (transitive dependents)')
+    .argument('<node>', 'Node to analyze (file name or symbol)')
+    .option('--depth <n>', 'How many hops of dependents to walk', parseInt)
+    .action(async (node, cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'affected');
+      const { runAffected } = await import('./commands/query.js');
+      await runAffected(ctx, { node, depth: cmdOpts.depth });
+    });
+
+  // add command — ingest a PDF and link its concepts to the graph
+  program
+    .command('add')
+    .description('Add a document (PDF) — extract concepts and link them to the dependency graph')
+    .argument('<file>', 'Path to the document (.pdf)')
+    .action(async (file) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'add');
+      const { runAdd } = await import('./commands/add.js');
+      await runAdd(ctx, { file });
+    });
+
+  // watch command — file watcher with auto-rebuild
+  program
+    .command('watch')
+    .description('Watch for file changes and incrementally rebuild the graph, tags, and importance')
+    .option('--debounce <ms>', 'Debounce window in milliseconds', parseInt)
+    .action(async (cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'watch');
+      const { runWatch } = await import('./commands/watch.js');
+      await runWatch(ctx, { debounce: cmdOpts.debounce });
+    });
+
+  // benchmark command — token usage comparison vs full-read baseline
+  program
+    .command('benchmark')
+    .description('Benchmark token usage: VibeGuard graph-based vs reading every file')
+    .option('--chars-per-token <n>', 'Chars-per-token divisor for the estimate (default 4)', parseInt)
+    .action(async (cmdOpts) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'benchmark');
+      const { runBenchmark } = await import('./commands/benchmark.js');
+      await runBenchmark(ctx, { charsPerToken: cmdOpts.charsPerToken });
     });
 
   // graph command — generate interactive HTML visualization

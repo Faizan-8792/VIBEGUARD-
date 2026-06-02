@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 import { VibeguardError, ErrorCodes, SCHEMA_VERSION } from '../utils/errors.js';
 import { FileStoreImpl } from '../storage/file-store.js';
 import { DEFAULT_CONFIG } from '../storage/config-store.js';

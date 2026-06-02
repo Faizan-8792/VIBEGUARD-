@@ -159,4 +159,79 @@ describe('Security Scanner', () => {
     expect(result.counts.critical).toBeGreaterThan(0);
     expect(result.counts.high).toBeGreaterThan(0);
   });
+
+  // ─── False-positive regression tests ────────────────────────────────────
+
+  it('does NOT flag arbitrary 40-char strings as AWS secret keys', async () => {
+    // Git SHAs, base64 blobs, and long identifiers are NOT AWS keys
+    await writeFile(
+      join(testDir, 'src', 'fp.ts'),
+      [
+        'const sha = "a1b2c3d4e5f6071829304152637485960aabbccd";',
+        'const blob = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2";',
+        'const id = "MinimalIssueFieldValueSingleSelectOptionXYZ";',
+      ].join('\n'),
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/fp.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-004-'))).toBe(false);
+  });
+
+  it('DOES flag a real AWS secret key in assignment context', async () => {
+    await writeFile(
+      join(testDir, 'src', 'real.ts'),
+      `const aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/real.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-004-'))).toBe(true);
+  });
+
+  it('does NOT flag a database URL without embedded credentials', async () => {
+    await writeFile(
+      join(testDir, 'src', 'dburl.ts'),
+      `const url = "postgres://localhost:5432/mydb";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/dburl.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-006-'))).toBe(false);
+  });
+
+  it('DOES flag a database URL with embedded credentials', async () => {
+    await writeFile(
+      join(testDir, 'src', 'dbcreds.ts'),
+      `const url = "postgres://admin:s3cr3t@db.example.com:5432/prod";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/dbcreds.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-006-'))).toBe(true);
+  });
+
+  it('reports progress via the callback for large scans', async () => {
+    // Create 60 files so the every-25 progress callback fires
+    const fileList: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      const name = `f${i}.ts`;
+      await writeFile(join(testDir, 'src', name), 'export const x = 1;', 'utf-8');
+      fileList.push(`src/${name}`);
+    }
+
+    const config = await loadConfig(testDir);
+    let calls = 0;
+    await scanSecurity(testDir, fileList, config, () => { calls++; });
+
+    expect(calls).toBeGreaterThan(0);
+  });
 });

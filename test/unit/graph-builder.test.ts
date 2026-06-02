@@ -69,6 +69,28 @@ describe('Graph Builder', () => {
     expect(aNode!.imports[0]).toContain('b');
   });
 
+  it('resolves ESM .js import specifiers to .ts node keys (regression)', async () => {
+    // ESM TypeScript requires .js extensions in import specifiers even though
+    // the source files are .ts. The graph must connect these — otherwise edges
+    // and dependents silently break for every real ESM TS project.
+    await writeSrcFiles({
+      'index.ts': 'import { getUser } from "./user.js";\nexport function main() { return getUser(); }',
+      'user.ts': 'export function getUser() { return 1; }',
+    });
+
+    const result = await buildGraph(testDir, ['src/index.ts', 'src/user.ts'], config, logger);
+
+    const indexNode = result.nodes.get('src/index.ts');
+    const userNode = result.nodes.get('src/user.ts');
+
+    // The .js specifier must resolve to the real .ts node key
+    expect(indexNode!.imports).toContain('src/user.ts');
+    // Dependents must be populated (inverse edge)
+    expect(userNode!.dependents).toContain('src/index.ts');
+    // Graph must have at least one real edge
+    expect(result.summary.edges).toBeGreaterThan(0);
+  });
+
   it('persists graph.json and analysis-meta.json', async () => {
     await writeSrcFiles({ 'index.ts': 'export const x = 1;' });
 
@@ -76,7 +98,7 @@ describe('Graph Builder', () => {
 
     const graph = await loadGraph(testDir);
     expect(graph).not.toBeNull();
-    expect(graph!.schemaVersion).toBe('1.0.0');
+    expect(graph!.schemaVersion).toBe('2.1.0');
     expect(graph!.nodes['src/index.ts']).toBeDefined();
   });
 

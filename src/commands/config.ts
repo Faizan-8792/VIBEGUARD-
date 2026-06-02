@@ -3,7 +3,8 @@ import { LLMClient } from '../engines/llm-provider.js';
 import { emitJson } from '../utils/json-output.js';
 import { header, statusIcon, brand, keyValue, divider } from '../utils/ui.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
+import type { Logger } from '../utils/logger.js';
 
 export interface ConfigCommandOptions {
   action: string;
@@ -20,19 +21,19 @@ const CONFIG_HEADER_ICON = '🔑';
 const CONFIG_HEADER_TITLE = 'LLM Configuration';
 
 export async function runConfig(ctx: CommandContext, opts: ConfigCommandOptions): Promise<void> {
-  const { projectRoot, options } = ctx;
+  const { projectRoot, options, logger } = ctx;
   const store = new CredentialsStore(projectRoot);
   const jsonMode = options.json;
 
   switch (opts.action) {
     case 'set-key':
-      await setKey(store, opts, jsonMode, projectRoot);
+      await setKey(store, opts, jsonMode, projectRoot, logger);
       break;
     case 'show':
       await showConfig(store, jsonMode);
       break;
     case 'test':
-      await testConfig(store, jsonMode);
+      await testConfig(store, jsonMode, logger);
       break;
     case 'clear':
       await clearConfig(store, jsonMode);
@@ -53,15 +54,19 @@ async function setKey(
   opts: ConfigCommandOptions,
   jsonMode: boolean,
   projectRoot: string,
+  logger: Logger,
 ): Promise<void> {
   const credentials = buildCredentials(opts);
 
   let tested = false;
   if (opts.test) {
+    if (!jsonMode) logger.startSpinner(`Testing connection to ${credentials.provider} (${credentials.model})...`);
     const status = await new LLMClient(credentials).testConnection();
     if (!status.ok) {
+      if (!jsonMode) logger.stopSpinner(false);
       throw new VibeguardError(ErrorCodes.CONFIG_INVALID, `API key test failed: ${status.error}`);
     }
+    if (!jsonMode) logger.stopSpinner(true);
     tested = true;
   }
 
@@ -159,13 +164,15 @@ async function showConfig(store: CredentialsStore, jsonMode: boolean): Promise<v
   process.stdout.write(out.join('\n') + '\n');
 }
 
-async function testConfig(store: CredentialsStore, jsonMode: boolean): Promise<void> {
+async function testConfig(store: CredentialsStore, jsonMode: boolean, logger: Logger): Promise<void> {
   const creds = await store.resolve();
   if (!creds) {
     throw new VibeguardError(ErrorCodes.CONFIG_NOT_FOUND, 'No LLM configured. Run `vibeguard config set-key <key>` first.');
   }
 
+  if (!jsonMode) logger.startSpinner(`Testing connection to ${creds.provider} (${creds.model})...`);
   const result = await new LLMClient(creds).testConnection();
+  if (!jsonMode) logger.stopSpinner(result.ok);
 
   if (jsonMode) {
     emitJson({ ok: result.ok, model: result.model, error: result.error });

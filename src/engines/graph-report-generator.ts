@@ -48,7 +48,7 @@ export async function generateGraphReport(
   }));
 
   // ─── Community Detection (connected components + directory clustering) ──
-  const communities = detectCommunities(nodes, graphData);
+  const communities = detectCommunities(nodes);
 
   // ─── Surprising Connections ─────────────────────────────────────────────
   const surprisingConnections = findSurprisingConnections(nodes, communities, graphData);
@@ -88,35 +88,86 @@ interface Community {
   description: string;
 }
 
-function detectCommunities(nodes: GraphNode[], graphData: GraphData): Community[] {
-  // Simple directory-based clustering + connectivity refinement
-  const dirGroups = new Map<string, string[]>();
+function detectCommunities(nodes: GraphNode[]): Community[] {
+  // ─── Connected-component clustering via union-find on import edges ───────
+  const fileToIndex = new Map<string, number>();
+  nodes.forEach((n, i) => fileToIndex.set(n.file, i));
 
-  for (const node of nodes) {
-    const parts = node.file.split('/');
-    let dir: string;
-    if (parts.length >= 3) {
-      dir = parts.slice(0, 2).join('/');
-    } else if (parts.length === 2) {
-      dir = parts[0];
-    } else {
-      dir = 'root';
+  const parent = nodes.map((_, i) => i);
+  const find = (x: number): number => {
+    let root = x;
+    while (parent[root] !== root) root = parent[root];
+    // Path compression
+    while (parent[x] !== root) {
+      const next = parent[x];
+      parent[x] = root;
+      x = next;
     }
-    if (!dirGroups.has(dir)) dirGroups.set(dir, []);
-    dirGroups.get(dir)!.push(node.file);
+    return root;
+  };
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  // Union files connected by imports (edges already resolved to file paths)
+  for (const node of nodes) {
+    const fromIdx = fileToIndex.get(node.file);
+    if (fromIdx === undefined) continue;
+    for (const imp of node.imports) {
+      const toIdx = fileToIndex.get(imp);
+      if (toIdx !== undefined) union(fromIdx, toIdx);
+    }
   }
 
+  // Group files by their connected-component root
+  const componentGroups = new Map<number, string[]>();
+  nodes.forEach((n, i) => {
+    const root = find(i);
+    if (!componentGroups.has(root)) componentGroups.set(root, []);
+    componentGroups.get(root)!.push(n.file);
+  });
+
   const communities: Community[] = [];
-  for (const [dir, files] of dirGroups) {
+  for (const files of componentGroups.values()) {
     if (files.length === 0) continue;
+    files.sort();
+    // Name the community after the dominant directory of its members
+    const name = dominantDirectory(files);
     communities.push({
-      name: dir,
-      files: files.sort(),
-      description: describeCommunity(dir, files),
+      name,
+      files,
+      description: describeCommunity(name, files),
     });
   }
 
   return communities.sort((a, b) => b.files.length - a.files.length);
+}
+
+/**
+ * Pick the most common top-level directory among a set of files to name a community.
+ */
+function dominantDirectory(files: string[]): string {
+  const dirCounts = new Map<string, number>();
+  for (const f of files) {
+    const parts = f.split('/');
+    let dir: string;
+    if (parts.length >= 3) dir = parts.slice(0, 2).join('/');
+    else if (parts.length === 2) dir = parts[0];
+    else dir = 'root';
+    dirCounts.set(dir, (dirCounts.get(dir) ?? 0) + 1);
+  }
+
+  let best = 'root';
+  let bestCount = -1;
+  for (const [dir, count] of dirCounts) {
+    if (count > bestCount) {
+      best = dir;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 function describeCommunity(dir: string, files: string[]): string {
@@ -141,25 +192,24 @@ function findSurprisingConnections(
 
   const surprising: Array<{ from: string; to: string; why: string }> = [];
   for (const node of nodes) {
+    if (surprising.length >= 5) break;
     const fromCommunity = fileToCommunity.get(node.file);
     for (const imp of node.imports) {
+      if (surprising.length >= 5) break;
       const resolved = resolveImport(imp, graphData);
       if (!resolved) continue;
       const toCommunity = fileToCommunity.get(resolved);
       if (fromCommunity && toCommunity && fromCommunity !== toCommunity) {
-        // Cross-community edge
-        if (surprising.length < 10) {
-          surprising.push({
-            from: node.file,
-            to: resolved,
-            why: `Cross-module dependency: ${fromCommunity} → ${toCommunity}`,
-          });
-        }
+        surprising.push({
+          from: node.file,
+          to: resolved,
+          why: `Cross-module dependency: ${fromCommunity} → ${toCommunity}`,
+        });
       }
     }
   }
 
-  return surprising.slice(0, 5);
+  return surprising;
 }
 
 function resolveImport(imp: string, graphData: GraphData): string | null {

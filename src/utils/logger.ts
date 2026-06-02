@@ -15,6 +15,7 @@ export interface Logger {
   debug(msg: string): void;
   startSpinner(msg: string): void;
   stopSpinner(success?: boolean): void;
+  updateSpinner(msg: string): void;
   progress(current: number, total: number, msg: string): void;
 }
 
@@ -81,11 +82,19 @@ export class LoggerImpl implements Logger {
     this.spinner = null;
   }
 
+  updateSpinner(msg: string): void {
+    if (this.options.jsonMode) return;
+    if (this.options.quiet) return;
+    if (this.spinner) {
+      this.spinner.text = msg;
+    }
+  }
+
   progress(current: number, total: number, msg: string): void {
     if (this.options.jsonMode) return;
     if (this.options.quiet) return;
 
-    const percent = Math.round((current / total) * 100);
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
     const progressMsg = `[${current}/${total}] ${percent}% ${msg}`;
 
     if (this.spinner) {

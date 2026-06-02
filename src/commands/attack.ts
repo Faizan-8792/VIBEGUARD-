@@ -7,7 +7,7 @@ import { header, severityBadge, filePath, divider, summaryLine, statusIcon, bran
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import type { AIAdvisorResult } from '../engines/ai-security-advisor.js';
 import type { FileFixPlan } from '../engines/ai-fixer.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 
 export interface AttackCommandOptions {
   ai: boolean;

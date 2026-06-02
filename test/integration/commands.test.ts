@@ -116,13 +116,13 @@ describe('Integration: map command', () => {
     expect(parsed.schemaVersion).toBe('1.0.0');
     expect(parsed.summary.nodes).toBeGreaterThanOrEqual(2);
     expect(parsed.summary.edges).toBeGreaterThanOrEqual(0);
-    expect(parsed.graphPath).toBe('.vibeguard/graph.json');
+    expect(parsed.outputs.graph).toBe('.vibeguard/graph.json');
   });
 
   it('creates graph.json file', async () => {
     const graphContent = await readFile(join(projectDir, '.vibeguard', 'graph.json'), 'utf-8');
     const graph = JSON.parse(graphContent);
-    expect(graph.schemaVersion).toBe('1.0.0');
+    expect(graph.schemaVersion).toBe('2.1.0');
     expect(graph.nodes).toBeDefined();
   });
 });
@@ -268,8 +268,19 @@ describe('Integration: --json output validity', () => {
     const commands = [
       ['map', '--json'],
       ['security', '--json'],
+      ['attack', '--json'],
       ['doctor', '--json'],
+      ['clean', '--plan', '--json'],
+      ['benchmark', '--json'],
+      ['graph', '--no-open', '--json'],
+      ['query', 'describe index', '--json'],
+      ['path', 'src/index.ts', 'src/index.ts', '--json'],
+      ['explain', 'src/index.ts', '--json'],
+      ['affected', 'src/index.ts', '--json'],
       ['trash', 'list', '--json'],
+      ['hook', 'status', '--json'],
+      ['install', '--platform', 'cursor', '--json'],
+      ['uninstall', '--platform', 'cursor', '--json'],
     ];
 
     for (const args of commands) {
@@ -279,6 +290,16 @@ describe('Integration: --json output validity', () => {
       const parsed = JSON.parse(result.stdout);
       expect(parsed.schemaVersion).toBe('1.0.0');
     }
+  });
+
+  it('rejects unknown install platforms instead of silently installing Kiro', async () => {
+    const result = await runCli(['install', '--platform', 'unknown-editor', '--json'], projectDir);
+    expect(result.exitCode).toBe(2);
+
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.schemaVersion).toBe('1.0.0');
+    expect(parsed.error.code).toBe('UNKNOWN_OPTION');
+    expect(parsed.error.details.validPlatforms).toContain('kiro');
   });
 });
 

@@ -10,7 +10,7 @@ import { resolveFiles } from '../utils/glob-resolver.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import { emitJson } from '../utils/json-output.js';
 import { header, keyValue, divider, statusIcon, filePath, brand } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 
 export interface PackCommandOptions {
   task: string;

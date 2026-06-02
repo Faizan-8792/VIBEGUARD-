@@ -2,7 +2,7 @@ import { TrashStoreImpl } from '../storage/trash-store.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import { emitJson } from '../utils/json-output.js';
 import { header, statusIcon, filePath, brand } from '../utils/ui.js';
-import type { CommandContext } from '../cli.js';
+import type { CommandContext } from '../context.js';
 
 export interface TrashCommandOptions {
   action: string;

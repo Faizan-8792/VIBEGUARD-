@@ -45,9 +45,36 @@ describe('CLI Shell', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('all 7 subcommands are registered', async () => {
+  it('all public subcommands are registered', async () => {
     const result = await runCli(['--help']);
-    const commands = ['doctor', 'security', 'clean', 'map', 'pack', 'trash', 'init'];
+    const commands = [
+      'init',
+      'map',
+      'security',
+      'clean',
+      'pack',
+      'doctor',
+      'trash',
+      'kiro',
+      'cursor',
+      'claude',
+      'copilot',
+      'gemini',
+      'aider',
+      'install',
+      'uninstall',
+      'attack',
+      'config',
+      'hook',
+      'query',
+      'path',
+      'explain',
+      'affected',
+      'add',
+      'watch',
+      'benchmark',
+      'graph',
+    ];
     for (const cmd of commands) {
       expect(result.stdout).toContain(cmd);
     }

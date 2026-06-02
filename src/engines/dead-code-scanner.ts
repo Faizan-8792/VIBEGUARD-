@@ -33,12 +33,26 @@ const JS_EXTENSION_RE = /\.(?:js|cjs|mjs)$/;
 
 // Conventional entrypoint files checked against the graph regardless of package.json.
 const KNOWN_ENTRYPOINTS = [
+  // TypeScript / JavaScript
   'src/index.ts', 'src/index.tsx', 'src/index.js',
   'src/main.ts', 'src/main.tsx',
   'src/cli.ts', 'cli.ts',
   'src/api.ts', 'src/lib.ts',
   'index.ts', 'index.tsx', 'index.js',
   'main.ts',
+  // Python
+  'main.py', 'app.py', 'manage.py', 'wsgi.py', 'asgi.py', 'run.py', '__main__.py',
+  'src/main.py', 'app/main.py', 'app/__init__.py',
+  // Go
+  'main.go', 'cmd/main.go',
+  // Java (common Spring Boot / Maven entrypoints handled by suffix below)
+];
+
+// Suffix-based entrypoint patterns (handles arbitrary directory nesting).
+const ENTRYPOINT_SUFFIXES = [
+  '/main.py', '/__main__.py', '/manage.py', '/wsgi.py', '/asgi.py',
+  '/main.go',
+  'Application.java', 'Main.java',
 ];
 
 // Directory prefixes whose files are framework-managed routes and always reachable.
@@ -95,15 +109,7 @@ export async function scanDeadCode(
   let unusedImports = 0;
 
   for (const [filePath, node] of graphNodes) {
-    if (entrypoints.has(filePath)) continue;
-
-    // Never flag config files or type declaration files as dead — they are
-    // loaded by tooling, not imported through the graph.
-    if (isConfigOrDeclaration(filePath)) continue;
-
-    // Never flag test files or test fixtures as dead — they are intentionally
-    // disconnected from production code.
-    if (isTestFile(filePath)) continue;
+    if (isExcludedFromDeadCode(filePath, entrypoints)) continue;
 
     const importance = importanceScores[filePath]?.score ?? 0;
     let lastCommitDate: string | null = null;
@@ -111,7 +117,7 @@ export async function scanDeadCode(
       lastCommitDate = await gitUtils.getLastCommitDate(filePath, projectRoot);
     }
 
-    const testOnlyReferences = node.dependents.every((d) => d.match(/\.(test|spec)\./));
+    const testOnlyReferences = node.dependents.length > 0 && node.dependents.every((d) => isTestFile(d));
 
     if (!reachable.has(filePath)) {
       unusedFiles++;
@@ -131,6 +137,7 @@ export async function scanDeadCode(
   // per-export loop entirely for files that have dependents.
   for (const [filePath, node] of graphNodes) {
     if (!reachable.has(filePath)) continue; // Already flagged as unused file
+    if (isExcludedFromDeadCode(filePath, entrypoints)) continue;
     if (node.dependents.length > 0) continue; // File has dependents — exports assumed used
 
     const importance = importanceScores[filePath]?.score ?? 0;
@@ -176,6 +183,20 @@ export async function scanDeadCode(
   };
 }
 
+/**
+ * Files that must never be classified as dead code: declared entrypoints,
+ * tooling config / declaration files (loaded outside the import graph), and
+ * test files / fixtures (intentionally disconnected from production code).
+ * Centralizes the skip rules shared by the unused-file and unused-export passes.
+ */
+function isExcludedFromDeadCode(filePath: string, entrypoints: Set<string>): boolean {
+  return (
+    entrypoints.has(filePath) ||
+    isConfigOrDeclaration(filePath) ||
+    isTestFile(filePath)
+  );
+}
+
 // Well-known tooling config filenames that are loaded by external tools, not imported.
 const KNOWN_CONFIG_FILES = new Set([
   'vitest.config.ts', 'vite.config.ts', 'jest.config.ts', 'jest.config.js',
@@ -204,6 +225,12 @@ function isTestFile(filePath: string): boolean {
   if (filePath.startsWith('test/') || filePath.startsWith('tests/') || filePath.startsWith('__tests__/')) return true;
   if (filePath.includes('/test/') || filePath.includes('/tests/') || filePath.includes('/__tests__/')) return true;
   if (/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filePath)) return true;
+  // Python: test_foo.py, foo_test.py, conftest.py
+  if (/(^|\/)test_[^/]+\.py$/.test(filePath) || /_test\.py$/.test(filePath) || /(^|\/)conftest\.py$/.test(filePath)) return true;
+  // Go: foo_test.go
+  if (/_test\.go$/.test(filePath)) return true;
+  // Java: FooTest.java, FooTests.java, src/test/ dir
+  if (/Tests?\.java$/.test(filePath) || filePath.includes('src/test/')) return true;
   return false;
 }
 
@@ -229,6 +256,13 @@ async function identifyEntrypoints(
   // Conventional entrypoint files.
   for (const ep of KNOWN_ENTRYPOINTS) {
     if (graphNodes.has(ep)) entrypoints.add(ep);
+  }
+
+  // Suffix-based entrypoints for polyglot projects (Python/Go/Java).
+  for (const filePath of graphNodes.keys()) {
+    if (ENTRYPOINT_SUFFIXES.some((suffix) => filePath.endsWith(suffix))) {
+      entrypoints.add(filePath);
+    }
   }
 
   // Next.js / framework route files are always reachable.
