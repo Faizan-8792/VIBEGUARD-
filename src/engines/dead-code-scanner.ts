@@ -36,6 +36,7 @@ const KNOWN_ENTRYPOINTS = [
   'src/index.ts', 'src/index.tsx', 'src/index.js',
   'src/main.ts', 'src/main.tsx',
   'src/cli.ts', 'cli.ts',
+  'src/api.ts', 'src/lib.ts',
   'index.ts', 'index.tsx', 'index.js',
   'main.ts',
 ];
