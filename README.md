@@ -11,7 +11,7 @@
 
 [![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-319%20passing-16a34a?style=for-the-badge)](#-development)
+[![Tests](https://img.shields.io/badge/tests-344%20passing-16a34a?style=for-the-badge)](#-development)
 [![Health](https://img.shields.io/badge/health-93%2F100-7c3aed?style=for-the-badge)](#-project-snapshot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f59e0b?style=for-the-badge)](LICENSE)
 
@@ -20,6 +20,8 @@
 [**Quick Start**](#-quick-start) ·
 [**Features**](#-features) ·
 [**Commands**](#-command-map) ·
+[**Interactive Graph**](#-interactive-dependency-graph) ·
+[**Security Audit**](#-unified-security-audit) ·
 [**Caveman Mode**](#-caveman-mode--save-tokens--boost-speed) ·
 [**Safety**](#-safety-model)
 
@@ -55,7 +57,7 @@ Measured against this repository:
 
 | Signal | Result |
 | --- | --- |
-| 🧪 Test suite | **319** passing — unit, integration & property-based |
+| 🧪 Test suite | **344** passing — unit, integration & property-based |
 | 🔒 Type gate | `npm run lint` + `npm run build` pass clean |
 | 🏥 Health score | **93 / 100** |
 | 🗺️ Dependency graph | local, incremental, SHA-256 change detection |
@@ -72,6 +74,7 @@ Measured against this repository:
 | 📦 | **AI context packs** — pick the few relevant files for a task via tags, graph radius, importance & token budget |
 | 🔒 | **Security scanner** — hard-coded secrets, risky framework usage, `.env`/`.gitignore` gaps |
 | 🛡️ | **Attack scanner** — SQLi, XSS, SSRF, command injection, path traversal, weak crypto, open redirect, brute force, OTP abuse, missing rate limits & more |
+| 🔬 | **Unified security audit** — dependency CVEs (SCA), taint dataflow (source→sink), misconfiguration (IaC), secrets & attacks → one 0-100 score + CycloneDX SBOM |
 | ✂️ | **Dead-code cleanup** — plan unused files/exports, apply into a recoverable `.vibeguard-trash/` |
 | ❓ | **Graph Q&A** — `query`, `path`, `explain`, `affected` — answers without reading every file |
 | 🌐 | **Polyglot** — TS/JS (deep AST), plus Python, Go, Java & Markdown with language-aware edges |
@@ -115,6 +118,82 @@ npx vibeguard --health   # 🏥  project health score
 npx vibeguard --graph    # 🗺️  build dependency graph
 npx vibeguard --dead     # ✂️  dead-code plan
 ```
+
+---
+
+## 🗺️ Interactive Dependency Graph
+
+`vibeguard graph` builds a **self-contained interactive HTML map** of your codebase
+(`.vibeguard/graph.html`) and opens it in the browser. It is the visual companion to
+`graph.json` — every node is a file, every edge an import/call/type relationship.
+
+```bash
+vibeguard map      # build/refresh graph data
+vibeguard graph    # render + open the interactive HTML view
+```
+
+**What you get in the view**
+
+- **2D force-directed layout** (vis-network) — nodes auto-arrange by connectivity
+- **Group colors** — core, commands, engines, storage, utils, tests
+- **🔍 Search box** — type a filename; matches highlight, the rest dim
+- **Hover + click highlight** — surfaces a node's direct connections via the graph
+- **⏸ Play / ▶ Pause** — freeze or resume the physics simulation
+- **Light, readable theme** — dark labels with white stroke, soft-grey edges
+- **Degree-scaled nodes** — busier files render larger (god-node spotting)
+
+**Scales to large projects (~500 files)**
+
+The renderer embeds the graph data directly and uses force-atlas physics with
+stabilization, so it stays responsive on big repos:
+
+- Incremental builds (SHA-256 hashing) mean only changed files re-parse — a 500-file
+  repo re-maps in seconds after the first build.
+- The HTML is **one static file** (vis-network from CDN) — no server, share it anywhere.
+- Pause physics on very large graphs for instant pan/zoom, then search to jump to a file.
+- `GRAPH_REPORT.md` complements the visual with **god nodes**, **communities**, and
+  **surprising connections** for when 500 dots is too many to eyeball.
+
+> Tip: for a huge graph, run `vibeguard map` then open `.vibeguard/graph.html` directly,
+> hit **⏸ Pause**, and use **🔍 Search** to navigate instead of scanning visually.
+
+```mermaid
+flowchart TD
+  subgraph Graph view
+    direction LR
+    core((core)) --> engines((engines))
+    core --> commands((commands))
+    engines --> storage((storage))
+    commands --> engines
+    engines --> utils((utils))
+  end
+```
+
+---
+
+## 🔬 Unified Security Audit
+
+`vibeguard audit` runs **five local engines** in one pass and rolls them into a single
+**0-100 security score**. Best-of Trivy + Semgrep + CodeQL, fully offline — no API key,
+no network, no native build.
+
+```bash
+vibeguard audit                       # full audit + security score
+vibeguard audit --sbom                # also write .vibeguard/sbom.json (CycloneDX)
+vibeguard audit --min-severity high   # only show high+ findings
+vibeguard audit --json                # machine-readable report
+```
+
+| Engine | Inspired by | What it finds |
+| --- | --- | --- |
+| 📦 **Dependency audit (SCA)** | Trivy | Known-vulnerable deps (bundled, semver-aware advisory DB), deprecated packages, risky/copyleft licenses |
+| 📄 **SBOM** | Trivy | CycloneDX component inventory with `pkg:npm/...` purls |
+| 🌊 **Taint dataflow** | Semgrep / CodeQL | Untrusted **sources** (`req.body`, `req.query`, `process.argv`…) flowing into dangerous **sinks** (exec, eval, query, innerHTML, fetch, fs) — sanitizer-aware, with confidence scores |
+| ⚙️ **Misconfiguration (IaC)** | Trivy | Dockerfile (root user, `:latest`, baked secrets), `.env` (debug, http://), CI workflows (moving-ref actions, write-all perms, script injection), `tsconfig` |
+| 🔒 **Secrets + attacks** | — | Re-uses the existing secret + cyberattack scanners |
+
+The same audit is available to AI agents through the MCP `run_audit` tool, and `vibeguard
+doctor` surfaces a quick dependency-vulnerability line.
 
 ---
 
@@ -194,6 +273,48 @@ An AI agent can also toggle it live via the MCP `set_caveman` tool, and `vibegua
 | `vibeguard serve` (alias `mcp`) | Start the MCP server (live agent tools) |
 | `vibeguard caveman on\|off\|status\|level\|benchmark` | Control Caveman Mode |
 | `vibeguard install --platform <name>` | Install editor/agent integration |
+
+---
+
+## 📚 Complete Function Reference
+
+Every command, grouped by purpose. All support `--json` and a `schemaVersion` field.
+
+### Setup & graph
+- **`init`** — create `.vibeguard/config.json` with sensible defaults (ignore globs, weights, token budget).
+- **`map`** — resolve the file set, parse imports/exports, build `graph.json` incrementally (SHA-256 change detection); also refreshes tags + importance and reports `+added` / `-removed` deltas.
+- **`graph [--no-open]`** — render the interactive `graph.html` and open it in the browser.
+- **`watch [--debounce <ms>]`** — file watcher; rebuilds graph + tags + importance on save (debounced, default 400ms).
+
+### Understand the code (graph-backed, zero tokens)
+- **`query "<question>"` `[--budget <n>]`** — answer a question by traversing the graph; no file reads.
+- **`path <source> <target>`** — shortest dependency path between two nodes.
+- **`explain <node>`** — a node's role, imports, dependents, exports, and importance class.
+- **`affected <node>` `[--depth <n>]`** — reverse-impact: what transitively depends on this node (blast radius).
+- **`flows [--view flows|bridges|gaps] [--limit <n>]`** — execution flows from entrypoints, architectural bridges, and knowledge gaps.
+- **`search "<query>"` `[--limit <n>]`** — hybrid keyword + local semantic search over code entities.
+- **`benchmark [--chars-per-token <n>]`** — estimate token reduction vs reading the whole repo.
+
+### AI context & output
+- **`pack [task]` `[--task-file] [--radius <n>] [--budget <n>] [--mode feature|bugfix|refactor]`** — assemble a focused, token-budgeted context bundle → `.vibeguard/context-package.{md,json}`.
+- **`add <file.pdf>`** — extract a PDF's concepts and link them into the graph.
+- **`caveman on|off|status|level|benchmark [lite|full|ultra]`** — control Caveman output-compression mode (always-on AI terseness).
+
+### Security & safety
+- **`security` `[--fix gitignore|env] [--dry-run] [--git-safe] [--force]`** — scan secrets, `.gitignore` gaps, framework misuse; optional auto-fix.
+- **`attack` `[--ai] [--fix] [--dry-run] [--budget <n>]`** — cyberattack scan (SQLi/XSS/SSRF/OTP/DDoS/…); optional LLM deep-scan + AI fixes with backups.
+- **`audit` `[--sbom] [--min-severity <level>]`** — unified security audit: dependency CVEs + taint dataflow + misconfig + secrets + attacks → 0-100 score (+ optional CycloneDX SBOM).
+- **`clean --plan | --apply` `[--interactive] [--dry-run] [--git-safe] [--force]`** — detect dead code; apply moves files to recoverable trash.
+- **`trash list | restore <id|path> | purge` `[--force] [--yes]`** — manage soft-deleted files.
+- **`doctor`** — aggregate everything into a 0-100 Project Health Score (security, dead-code, architecture, context-efficiency) + Caveman & dependency status.
+- **`hook install | uninstall | status`** — git pre-commit hook that blocks commits containing secrets.
+
+### Integrate with AI assistants
+- **`install --platform <kiro|cursor|claude|copilot|gemini|aider>` `[--caveman [level]]`** — wire VibeGuard (and optionally Caveman) into your assistant.
+- **`uninstall --platform <name>`** — remove generated integration files (also clears Caveman rules).
+- **Aliases:** `kiro|cursor|claude|copilot|gemini|aider install|uninstall`.
+- **`serve` (alias `mcp`) `[--tools a,b,c]`** — start the MCP server exposing engines as live agent tools (`get_minimal_context`, `query_graph`, `find_path`, `explain_node`, `get_affected`, `pack_context`, `scan_security`, `scan_attacks`, `get_health`, `build_graph`, `detect_dead_code`, `set_caveman`, `run_audit`).
+- **`config set-key|show|test|clear|providers`** — manage LLM provider API keys for AI-powered scans.
 
 ---
 
@@ -289,6 +410,7 @@ rejected rather than silently installing the wrong target.
   config.json            graph.json            graph.html
   GRAPH_REPORT.md        context-package.md    context-package.json
   analysis-meta.json     documents.json        caveman.json
+  search-index.json      embeddings.json       sbom.json (with audit --sbom)
 
 .vibeguard-trash/        ← recoverable cleanup entries
 ```
@@ -326,12 +448,13 @@ cd VIBEGUARD-
 npm install
 npm run lint     # tsc --noEmit
 npm run build    # tsc
-npm test         # vitest — 319 tests
+npm test         # vitest — 344 tests
 npm pack --dry-run
 ```
 
-Validation status: lint ✓ · build ✓ · `319` tests ✓ · `npm pack` includes `dist/`,
-`README.md`, `ROADMAP.md`, `LICENSE`, `package.json`.
+Validation status: lint ✓ · build ✓ · `344` tests ✓ · `npm pack` includes `dist/`,
+`README.md`, `LICENSE`, `package.json` (internal `ROADMAP.md` and `takeinspiration/`
+are gitignored and excluded from the published package).
 
 ---
 

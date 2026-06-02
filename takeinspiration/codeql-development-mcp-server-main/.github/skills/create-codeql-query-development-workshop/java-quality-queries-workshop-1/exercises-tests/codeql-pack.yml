@@ -1,5 +1,0 @@
-name: java-quality-workshop-exercises-tests
-version: 0.0.1
-extractor: java
-dependencies:
-  java-quality-workshop-exercises: '*'

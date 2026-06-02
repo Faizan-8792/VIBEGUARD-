@@ -42,6 +42,7 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
       choices: [
         { name: '🔒  Security Scan        — Find secrets & vulnerabilities', value: 'security' },
         { name: '🛡️   Cyberattack Proof     — Scan for DDoS, SQLi, XSS, OTP abuse...', value: 'attack' },
+        { name: '🔬  Security Audit        — Deps (CVE), taint, misconfig + SBOM', value: 'audit' },
         { name: '🏥  Health Check          — Project health score', value: 'health' },
         { name: '🗺️   Dependency Graph      — Map file relationships', value: 'map' },
         { name: '🧹  Dead Code Detection   — Find unused files & exports', value: 'dead' },
@@ -69,6 +70,9 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
           break;
         case 'attack':
           await runAttackInteractive(ctx);
+          break;
+        case 'audit':
+          await runAuditInteractive(ctx);
           break;
         case 'health':
           await runHealthInteractive(ctx);
@@ -369,6 +373,12 @@ async function showContextFix(details: ContextDetails): Promise<void> {
     lines.push('Keep behavior identical and update all references.');
     await copyToClipboard(lines.join('\n'));
   }
+}
+
+async function runAuditInteractive(ctx: CommandContext): Promise<void> {
+  const { runAudit } = await import('./audit.js');
+  // Reuse the audit command directly; it renders its own terminal report.
+  await runAudit(ctx, { sbom: false });
 }
 
 async function runMapInteractive(ctx: CommandContext): Promise<void> {

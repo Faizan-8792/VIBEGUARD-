@@ -9,8 +9,12 @@ dist/
 # Trash (soft-deleted files)
 .vibeguard-trash/
 
-# Reference repos (third-party, read-only)
+# Reference repos (third-party, read-only — never publish)
 takeinspiration/
+
+# Internal planning + dev scratch (not for the public repo)
+ROADMAP.md
+smoke.mjs
 
 # Environment & secrets
 .env
