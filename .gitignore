@@ -13,6 +13,8 @@ dist/
 .vibeguard/tags.json
 .vibeguard/importance.json
 .vibeguard/credentials.json
+.vibeguard/search-index.json
+.vibeguard/embeddings.json
 takeinspiration/
 # Trash (soft-deleted files)
 .vibeguard-trash/
