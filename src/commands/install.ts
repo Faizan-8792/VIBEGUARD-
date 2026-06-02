@@ -4,8 +4,13 @@ import { statusIcon, brand, header } from '../utils/ui.js';
 import { emitJson } from '../utils/json-output.js';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
 import type { CommandContext } from '../context.js';
+import type { CavemanLevel } from '../engines/caveman.js';
 
-const SKILL_CONTENT = `# VibeGuard Skill
+const SKILL_CONTENT = `---
+name: vibeguard
+description: Local-only static analysis, security scanning, dead code detection, and AI context packaging. Trigger with /vibeguard.
+---
+# VibeGuard Skill
 
 Local-only TypeScript/JavaScript static analysis, security scanning, dead code detection, and AI context packaging.
 
@@ -195,7 +200,7 @@ async function removeMcpConfig(
   return { removed: true, path: normalizedPath };
 }
 
-export async function runInstall(ctx: CommandContext, opts: { platform: string }): Promise<void> {
+export async function runInstall(ctx: CommandContext, opts: { platform: string; caveman?: string | boolean }): Promise<void> {
   const { projectRoot } = ctx;
   const platform = normalizePlatform(opts.platform);
 
@@ -222,8 +227,30 @@ export async function runInstall(ctx: CommandContext, opts: { platform: string }
     }
   });
 
+  // Optionally enable Caveman Mode in the same step, so one command gives the
+  // user both the integration and token-saving output compression.
+  let cavemanEnabled: { level: CavemanLevel; written: string[] } | null = null;
+  if (opts.caveman !== undefined && opts.caveman !== false) {
+    const { enableCaveman, isCavemanLevel, DEFAULT_CAVEMAN_LEVEL } = await import('../engines/caveman.js');
+    const requested = typeof opts.caveman === 'string' ? opts.caveman : undefined;
+    if (requested !== undefined && !isCavemanLevel(requested)) {
+      throw new VibeguardError(
+        ErrorCodes.UNKNOWN_OPTION,
+        `Unknown caveman level: "${requested}". Valid levels: lite, full, ultra`,
+      );
+    }
+    const level = (requested ?? DEFAULT_CAVEMAN_LEVEL) as CavemanLevel;
+    const { written } = await enableCaveman(projectRoot, level);
+    cavemanEnabled = { level, written };
+    if (!ctx.options.json) {
+      process.stdout.write(
+        `  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')} ${brand.muted(`(level: ${level})`)}\n\n`,
+      );
+    }
+  }
+
   if (ctx.options.json) {
-    emitJson({ action: 'install', platform, installed: true });
+    emitJson({ action: 'install', platform, installed: true, caveman: cavemanEnabled });
   }
 }
 
@@ -600,8 +627,25 @@ export async function runUninstall(ctx: CommandContext, opts: { platform: string
     }
   });
 
+  // Also tear down Caveman rule files so uninstall leaves nothing behind.
+  const { removeCavemanRules, loadCavemanState, saveCavemanState, CAVEMAN_SCHEMA_VERSION } =
+    await import('../engines/caveman.js');
+  const removedCaveman = await removeCavemanRules(projectRoot);
+  if (removedCaveman.length > 0) {
+    const prev = await loadCavemanState(projectRoot);
+    await saveCavemanState(projectRoot, {
+      schemaVersion: CAVEMAN_SCHEMA_VERSION,
+      enabled: false,
+      level: prev.level,
+      updatedAt: new Date().toISOString(),
+    });
+    if (!ctx.options.json) {
+      process.stdout.write(`  ${statusIcon('success')} ${brand.success('Removed Caveman rules')}\n\n`);
+    }
+  }
+
   if (ctx.options.json) {
-    emitJson({ action: 'uninstall', platform, uninstalled: true });
+    emitJson({ action: 'uninstall', platform, uninstalled: true, cavemanRemoved: removedCaveman });
   }
 }
 

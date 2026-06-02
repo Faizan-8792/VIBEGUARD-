@@ -14,11 +14,20 @@ export async function runDoctor(ctx: CommandContext): Promise<void> {
 
   logger.stopSpinner(true);
 
+  const { loadCavemanState, estimatedSavingsPct } = await import('../engines/caveman.js');
+  const cavemanState = await loadCavemanState(projectRoot);
+  const caveman = {
+    enabled: cavemanState.enabled,
+    level: cavemanState.level,
+    estimatedSavingsPct: cavemanState.enabled ? estimatedSavingsPct(cavemanState.level) : 0,
+  };
+
   if (options.json) {
     emitJson({
       summary: result.summary,
       issues: result.issues,
       warnings: result.warnings,
+      caveman,
     });
   } else {
     const output: string[] = [];
@@ -37,6 +46,15 @@ export async function runDoctor(ctx: CommandContext): Promise<void> {
     output.push(keyValue('Dead Code', scoreBar(result.summary.deadCode)));
     output.push(keyValue('Architecture', scoreBar(result.summary.architecture)));
     output.push(keyValue('Context Efficiency', scoreBar(result.summary.contextEfficiency)));
+    output.push('');
+
+    // Caveman Mode status — informational, not part of the health score.
+    output.push(keyValue(
+      'Caveman Mode',
+      caveman.enabled
+        ? brand.success(`on (${caveman.level}, ~${caveman.estimatedSavingsPct}% output savings)`)
+        : brand.muted('off — enable with `vibeguard caveman on`'),
+    ));
     output.push('');
 
     // Issues summary

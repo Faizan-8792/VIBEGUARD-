@@ -361,11 +361,12 @@ function setupProgram(): Command {
     .command('install')
     .description('Install VibeGuard skill into your AI coding assistant')
     .option('--platform <name>', 'Platform: kiro (default)', 'kiro')
+    .option('--caveman [level]', 'Also enable Caveman Mode (optional level: lite|full|ultra)')
     .action(async (cmdOpts) => {
       const globalOpts = program.opts() as GlobalOptions;
       const ctx = await createContext(globalOpts, 'install');
       const { runInstall } = await import('./commands/install.js');
-      await runInstall(ctx, { platform: cmdOpts.platform });
+      await runInstall(ctx, { platform: cmdOpts.platform, caveman: cmdOpts.caveman });
     });
 
   // uninstall command
@@ -581,6 +582,18 @@ function setupProgram(): Command {
       const ctx = await createContext(globalOpts, 'serve');
       const { runServe } = await import('./commands/serve.js');
       await runServe(ctx, { tools: cmdOpts.tools });
+    });
+
+  // caveman command — output compression mode (save tokens + boost speed)
+  program
+    .command('caveman [action] [level]')
+    .description('Caveman Mode: terse AI replies that save tokens & boost speed (action: on|off|status|level|benchmark)')
+    .action(async (action: string | undefined, level: string | undefined) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'caveman');
+      const { runCaveman } = await import('./commands/caveman.js');
+      const resolvedAction = (action ?? 'status') as 'on' | 'off' | 'status' | 'level' | 'benchmark';
+      await runCaveman(ctx, { action: resolvedAction, level });
     });
 
   return program;

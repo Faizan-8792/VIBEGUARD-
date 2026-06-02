@@ -46,6 +46,7 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
         { name: '🗺️   Dependency Graph      — Map file relationships', value: 'map' },
         { name: '🧹  Dead Code Detection   — Find unused files & exports', value: 'dead' },
         { name: '📦  Context Package       — Generate AI context', value: 'pack' },
+        { name: '🪨  Caveman Mode          — Save tokens & boost speed', value: 'caveman' },
         { name: '🗑️   Trash Manager         — View soft-deleted files', value: 'trash' },
         { name: '⚙️   Initialize Config     — Setup .vibeguard/', value: 'init' },
         { name: '🔑  Configure LLM         — Add API key (OpenAI, Gemini, DeepSeek...)', value: 'llm' },
@@ -80,6 +81,9 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
           break;
         case 'pack':
           await runPackInteractive(ctx);
+          break;
+        case 'caveman':
+          await runCavemanInteractive(ctx);
           break;
         case 'trash':
           await runTrashInteractive(ctx);
@@ -383,6 +387,12 @@ async function runMapInteractive(ctx: CommandContext): Promise<void> {
   output.push(keyValue('Edges', brand.info.bold(String(result.summary.edges))));
   output.push(keyValue('Rebuilt', brand.secondary(String(result.summary.rebuilt))));
   output.push(keyValue('Skipped', brand.muted(String(result.summary.skipped))));
+  if (result.summary.added.length > 0) {
+    output.push(keyValue('Added', brand.success(`+${result.summary.added.length}`)));
+  }
+  if (result.summary.removed.length > 0) {
+    output.push(keyValue('Removed', brand.danger(`-${result.summary.removed.length}`)));
+  }
   output.push('');
   output.push(`  ${statusIcon('success')} ${brand.success('Graph saved to')} ${brand.muted('.vibeguard/graph.json')}`);
 
@@ -485,6 +495,43 @@ async function runPackInteractive(ctx: CommandContext): Promise<void> {
 
   const { runPack } = await import('./pack.js');
   await runPack(ctx, { task, radius: undefined, budget: undefined, mode: undefined });
+}
+
+async function runCavemanInteractive(ctx: CommandContext): Promise<void> {
+  const { loadCavemanState, levelDescription, estimatedSavingsPct } = await import('../engines/caveman.js');
+  const { runCaveman } = await import('./caveman.js');
+
+  const state = await loadCavemanState(ctx.projectRoot);
+
+  const output: string[] = [];
+  output.push(header('Caveman Mode', '🪨'));
+  output.push('');
+  output.push(`  ${brand.primary.bold('Why use many token when few do trick.')}`);
+  output.push(`  ${brand.muted('Terse, high-signal AI replies. Full technical accuracy. Fewer tokens, faster reads.')}`);
+  output.push('');
+  output.push(keyValue('Current', state.enabled ? brand.success.bold(`ON (${state.level})`) : brand.muted('off')));
+  output.push('');
+  process.stdout.write(output.join('\n') + '\n');
+
+  const choice = await select<string>({
+    message: brand.primary.bold('Caveman action:'),
+    choices: [
+      { name: `🪨  Enable — lite    ${brand.muted(`(~${estimatedSavingsPct('lite')}% · ${levelDescription('lite')})`)}`, value: 'lite' },
+      { name: `🪨  Enable — full    ${brand.muted(`(~${estimatedSavingsPct('full')}% · classic caveman)`)}`, value: 'full' },
+      { name: `🪨  Enable — ultra   ${brand.muted(`(~${estimatedSavingsPct('ultra')}% · telegraphic)`)}`, value: 'ultra' },
+      { name: '🗣️   Disable (normal mode)', value: 'off' },
+      { name: brand.muted('↩   Back'), value: 'back' },
+    ],
+  });
+
+  process.stdout.write('\n');
+
+  if (choice === 'back') return;
+  if (choice === 'off') {
+    await runCaveman(ctx, { action: 'off' });
+    return;
+  }
+  await runCaveman(ctx, { action: 'on', level: choice });
 }
 
 async function runTrashInteractive(ctx: CommandContext): Promise<void> {

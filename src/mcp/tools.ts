@@ -34,6 +34,7 @@ export const TOOL_NAMES = [
   'get_affected',
   'pack_context',
   'detect_dead_code',
+  'set_caveman',
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -271,6 +272,53 @@ export function createTools(): ToolDefinition[] {
         const graphNodes = new Map(Object.entries(graph.nodes));
         const result = await scanDeadCode(projectRoot, graphNodes, importance);
         return { candidates: result.candidates, summary: result.summary, ...(result.warning ? { warning: result.warning } : {}) };
+      },
+    },
+    {
+      name: 'set_caveman',
+      description: 'Toggle Caveman Mode — terse, token-saving replies. action: on|off|status|level. Persists across the whole session via an always-on rule file.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'on | off | status | level' },
+          level: { type: 'string', description: 'Compression level when enabling: lite | full | ultra' },
+        },
+        required: ['action'],
+      },
+      async run(args, { projectRoot }) {
+        const {
+          enableCaveman, disableCaveman, loadCavemanState, isCavemanLevel,
+          estimatedSavingsPct, DEFAULT_CAVEMAN_LEVEL,
+        } = await import('../engines/caveman.js');
+
+        const action = str(args, 'action', 'status');
+        const rawLevel = str(args, 'level') || undefined;
+
+        if (action === 'on' || action === 'level') {
+          const current = await loadCavemanState(projectRoot);
+          if (action === 'level' && !current.enabled) {
+            return { error: 'Caveman is off. Use action "on" first.' };
+          }
+          if (rawLevel !== undefined && !isCavemanLevel(rawLevel)) {
+            return { error: `Unknown level "${rawLevel}". Use lite | full | ultra.` };
+          }
+          const level = isCavemanLevel(rawLevel) ? rawLevel : (current.enabled ? current.level : DEFAULT_CAVEMAN_LEVEL);
+          const { written } = await enableCaveman(projectRoot, level);
+          return { enabled: true, level, estimatedSavingsPct: estimatedSavingsPct(level), written };
+        }
+
+        if (action === 'off') {
+          const { removed } = await disableCaveman(projectRoot);
+          return { enabled: false, removed };
+        }
+
+        // status
+        const state = await loadCavemanState(projectRoot);
+        return {
+          enabled: state.enabled,
+          level: state.level,
+          estimatedSavingsPct: state.enabled ? estimatedSavingsPct(state.level) : 0,
+        };
       },
     },
   ];

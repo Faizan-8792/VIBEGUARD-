@@ -1,3 +1,7 @@
+---
+name: vibeguard
+description: Local-only static analysis, security scanning, dead code detection, and AI context packaging. Trigger with /vibeguard.
+---
 # VibeGuard Skill
 
 Local-only TypeScript/JavaScript static analysis, security scanning, dead code detection, and AI context packaging.

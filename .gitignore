@@ -4,20 +4,13 @@ node_modules/
 # Build output
 dist/
 
-# VibeGuard runtime data (regenerated per project)
-.vibeguard/graph.json
-.vibeguard/analysis-meta.json
-.vibeguard/context-package.json
-.vibeguard/context-package.md
-.vibeguard/cleanup-plan.json
-.vibeguard/tags.json
-.vibeguard/importance.json
-.vibeguard/credentials.json
-.vibeguard/search-index.json
-.vibeguard/embeddings.json
-takeinspiration/
+# VibeGuard local data (config + regenerated artifacts, never committed)
+.vibeguard/
 # Trash (soft-deleted files)
 .vibeguard-trash/
+
+# Reference repos (third-party, read-only)
+takeinspiration/
 
 # Environment & secrets
 .env

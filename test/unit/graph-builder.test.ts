@@ -139,4 +139,61 @@ describe('Graph Builder', () => {
     expect(result2.summary.skipped).toBe(2);
     expect(result2.summary.rebuilt).toBe(0);
   });
+
+  it('tracks a newly created file: node added + reported in summary.added', async () => {
+    await writeSrcFiles({ 'a.ts': 'export const a = 1;' });
+    const first = await buildGraph(testDir, ['src/a.ts'], config, logger);
+    // First build has no previous graph, so nothing is "added" relative to a prior run.
+    expect(first.summary.added).toEqual([]);
+
+    // Simulate a new file appearing during development.
+    await writeSrcFiles({ 'b.ts': 'export const b = 2;' });
+    const second = await buildGraph(testDir, ['src/a.ts', 'src/b.ts'], config, logger);
+
+    expect(second.nodes.has('src/b.ts')).toBe(true);
+    expect(second.summary.added).toContain('src/b.ts');
+    expect(second.summary.removed).toEqual([]);
+
+    // The new node must be persisted to graph.json.
+    const graph = await loadGraph(testDir);
+    expect(graph!.nodes['src/b.ts']).toBeDefined();
+  });
+
+  it('tracks a deleted file: node pruned from map + graph.json + summary.removed', async () => {
+    await writeSrcFiles({
+      'a.ts': 'export const a = 1;',
+      'b.ts': 'export const b = 2;',
+    });
+    await buildGraph(testDir, ['src/a.ts', 'src/b.ts'], config, logger);
+
+    // Simulate b.ts being deleted: it drops out of the resolved file set.
+    await rm(join(testDir, 'src', 'b.ts'), { force: true });
+    const result = await buildGraph(testDir, ['src/a.ts'], config, logger);
+
+    // Pruned from the in-memory node set...
+    expect(result.nodes.has('src/b.ts')).toBe(false);
+    expect(result.summary.removed).toContain('src/b.ts');
+    expect(result.summary.added).toEqual([]);
+
+    // ...and from the persisted graph.
+    const graph = await loadGraph(testDir);
+    expect(graph!.nodes['src/b.ts']).toBeUndefined();
+    expect(graph!.nodes['src/a.ts']).toBeDefined();
+  });
+
+  it('drops stale dependents when an importing file is deleted', async () => {
+    await writeSrcFiles({
+      'index.ts': 'import { getUser } from "./user.js";\nexport function main() { return getUser(); }',
+      'user.ts': 'export function getUser() { return 1; }',
+    });
+    await buildGraph(testDir, ['src/index.ts', 'src/user.ts'], config, logger);
+
+    // Delete the importer; user.ts should no longer list it as a dependent.
+    await rm(join(testDir, 'src', 'index.ts'), { force: true });
+    const result = await buildGraph(testDir, ['src/user.ts'], config, logger);
+
+    expect(result.summary.removed).toContain('src/index.ts');
+    const userNode = result.nodes.get('src/user.ts');
+    expect(userNode!.dependents).not.toContain('src/index.ts');
+  });
 });

@@ -16,6 +16,7 @@ describe('MCP tool registry', () => {
     expect(names).toContain('get_affected');
     expect(names).toContain('pack_context');
     expect(names).toContain('detect_dead_code');
+    expect(names).toContain('set_caveman');
   });
 
   it('every tool has a name, description, and object input schema', () => {
@@ -24,6 +25,33 @@ describe('MCP tool registry', () => {
       expect(tool.description.length).toBeGreaterThan(10);
       expect(tool.inputSchema.type).toBe('object');
       expect(typeof tool.run).toBe('function');
+    }
+  });
+
+  it('set_caveman toggles caveman state on/off/status and reports errors structurally', async () => {
+    const { mkdtemp, rm, access } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'vg-mcp-caveman-'));
+    try {
+      const tool = createTools().find((t) => t.name === 'set_caveman');
+      expect(tool).toBeDefined();
+
+      const initial = await tool!.run({ action: 'status' }, { projectRoot: dir }) as { enabled: boolean };
+      expect(initial.enabled).toBe(false);
+
+      const on = await tool!.run({ action: 'on', level: 'ultra' }, { projectRoot: dir }) as { enabled: boolean; level: string };
+      expect(on.enabled).toBe(true);
+      expect(on.level).toBe('ultra');
+      await access(join(dir, '.kiro', 'steering', 'vibeguard-caveman.md')); // throws if missing
+
+      const off = await tool!.run({ action: 'off' }, { projectRoot: dir }) as { enabled: boolean };
+      expect(off.enabled).toBe(false);
+
+      const bad = await tool!.run({ action: 'on', level: 'turbo' }, { projectRoot: dir }) as { error?: string };
+      expect(bad.error).toBeTruthy();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 

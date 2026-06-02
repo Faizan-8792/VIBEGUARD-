@@ -1,147 +1,210 @@
-# VibeGuard
-
-<p align="center">
-  <strong>Local-first codebase intelligence for AI coding workflows.</strong><br/>
-  Build dependency graphs, generate focused AI context, scan security risks, find dead code, and wire the results into your editor or agent.
-</p>
-
 <div align="center">
 
-[![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-22c55e?style=for-the-badge)](https://nodejs.org/)
-[![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-223%20passing-16a34a?style=for-the-badge)](#development)
-[![Health](https://img.shields.io/badge/health-93%2F100-7c3aed?style=for-the-badge)](#project-snapshot)
+# 🛡️ VibeGuard
+
+### Local-first codebase intelligence for AI coding workflows
+
+*Map your code. Feed your AI only what matters. Catch secrets and dead code. Cut output tokens.*
+**All on your machine — no API key for the core.**
+
+<br/>
+
+[![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-319%20passing-16a34a?style=for-the-badge)](#-development)
+[![Health](https://img.shields.io/badge/health-93%2F100-7c3aed?style=for-the-badge)](#-project-snapshot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f59e0b?style=for-the-badge)](LICENSE)
+
+<br/>
+
+[**Quick Start**](#-quick-start) ·
+[**Features**](#-features) ·
+[**Commands**](#-command-map) ·
+[**Caveman Mode**](#-caveman-mode--save-tokens--boost-speed) ·
+[**Safety**](#-safety-model)
 
 </div>
 
 ---
 
-## Why VibeGuard?
+## 💡 Why VibeGuard?
 
-AI assistants are strongest when they read the right code, not all the code. VibeGuard gives them a local, structured map of your project so they can work with less noise and fewer tokens.
+AI assistants are strongest when they read the **right** code, not **all** the code.
+VibeGuard gives them a local, structured map of your project so they work with less
+noise, fewer tokens, and higher accuracy.
 
 ```mermaid
 flowchart LR
-  A[Your repo] --> B[VibeGuard local analysis]
+  A[Your repo] --> B[VibeGuard<br/>local analysis]
   B --> C[Dependency graph]
   B --> D[Security findings]
   B --> E[Dead-code plan]
-  C --> F[Focused context package]
-  F --> G[AI assistant reads 5-15 relevant files]
+  C --> F[Focused context pack]
+  F --> G[AI reads 5-15<br/>relevant files]
 ```
 
-**Core promise:** the main graph, security, dead-code, health, query, and packaging workflows run locally with no AI API key. Optional AI-powered attack review and auto-fix use your configured LLM provider.
+> **Core promise:** graph, security, dead-code, health, query, packaging, and Caveman
+> compression all run **locally with no AI API key**. Only the optional `attack --ai`
+> review and auto-fix use your configured LLM provider.
 
-## Project Snapshot
+---
+
+## 📊 Project Snapshot
 
 Measured against this repository:
 
 | Signal | Result |
 | --- | --- |
-| Test suite | `223` passing tests across unit, integration, and property-based coverage |
-| Type gate | `npm run lint` and `npm run build` pass |
-| Health score | `93/100` |
-| Dependency graph | `59` nodes, `227` edges |
-| Security scan | `0` critical/high/medium/low/info findings |
-| Token benchmark | Graph read estimate is `88.4%` smaller than full repo read |
+| 🧪 Test suite | **319** passing — unit, integration & property-based |
+| 🔒 Type gate | `npm run lint` + `npm run build` pass clean |
+| 🏥 Health score | **93 / 100** |
+| 🗺️ Dependency graph | local, incremental, SHA-256 change detection |
+| 🛡️ Security scan | **0** outstanding findings |
+| ✂️ Token benchmark | graph read ≈ **88% smaller** than full-repo read |
 
-## Features
+---
 
-- **Dependency graph:** builds `.vibeguard/graph.json`, `.vibeguard/graph.html`, and `.vibeguard/GRAPH_REPORT.md`.
-- **AI context packs:** selects relevant files for a task using tags, graph radius, importance, and token budget.
-- **Security scanner:** detects hard-coded secrets, risky framework usage, `.env`/`.gitignore` gaps, and common vulnerability patterns.
-- **Attack scanner:** checks SQLi, XSS, SSRF, command injection, path traversal, weak crypto, open redirect, brute force, OTP abuse, DDoS-style missing rate limits, and more.
-- **Dead-code cleanup:** plans unused file/export cleanup and moves applied removals into `.vibeguard-trash/` for recovery.
-- **Graph Q&A:** answers graph-backed questions, shortest paths, node explanations, and affected-node impact analysis.
-- **Deep polyglot coverage:** TypeScript/JavaScript, Python, Go, Java, and Markdown all get language-aware imports, exports, declared symbols, package metadata, and semantic graph edges.
-- **Agent integrations:** installs guidance for Kiro, Cursor, Claude Code, GitHub Copilot, Gemini, and Aider.
+## ✨ Features
 
-## Install
+| | Capability |
+| --- | --- |
+| 🗺️ | **Dependency graph** — `.vibeguard/graph.json`, an interactive `graph.html`, and a `GRAPH_REPORT.md` architecture summary |
+| 📦 | **AI context packs** — pick the few relevant files for a task via tags, graph radius, importance & token budget |
+| 🔒 | **Security scanner** — hard-coded secrets, risky framework usage, `.env`/`.gitignore` gaps |
+| 🛡️ | **Attack scanner** — SQLi, XSS, SSRF, command injection, path traversal, weak crypto, open redirect, brute force, OTP abuse, missing rate limits & more |
+| ✂️ | **Dead-code cleanup** — plan unused files/exports, apply into a recoverable `.vibeguard-trash/` |
+| ❓ | **Graph Q&A** — `query`, `path`, `explain`, `affected` — answers without reading every file |
+| 🌐 | **Polyglot** — TS/JS (deep AST), plus Python, Go, Java & Markdown with language-aware edges |
+| 🤝 | **Agent integrations** — Kiro, Cursor, Claude Code, Copilot, Gemini, Aider, Windsurf |
+| 🪨 | **Caveman Mode** — always-on rules that make your AI reply terse, cutting **35–75%** of output tokens |
 
-```bash
-# Run directly
-npx vibeguard --help
+---
 
-# Or install globally
-npm install -g vibeguard
-vibeguard --help
-```
-
-Requirements:
-
-- Node.js `>=18`
-- A local project directory
-- Git is optional, but required for hook installation and git-aware scoring
-
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
-# 1. Create .vibeguard/config.json
+# 1. Initialize  → creates .vibeguard/ (gitignored)
 npx vibeguard init
 
-# 2. Build the project graph
+# 2. Map         → build the dependency graph
 npx vibeguard map
 
-# 3. Generate focused context for an AI task
+# 3. Pack        → focused context for an AI task
 npx vibeguard pack "fix the auth login flow"
 
-# 4. Check quality and security
+# 4. Check       → quality + security
 npx vibeguard doctor
 npx vibeguard security
 ```
 
-Shortcut mode:
+**Install:**
 
 ```bash
-npx vibeguard --run      # Interactive terminal UI
-npx vibeguard --scan     # Security scan
-npx vibeguard --health   # Project health score
-npx vibeguard --graph    # Build dependency graph
-npx vibeguard --dead     # Dead-code plan
+npx vibeguard --help          # run directly
+npm install -g vibeguard      # or install globally
 ```
 
-## Command Map
+Requirements: **Node.js ≥ 18** · a project directory · Git (optional, needed for hooks + git-aware scoring).
+
+**One-key shortcuts:**
+
+```bash
+npx vibeguard --run      # 🖥️  interactive terminal UI
+npx vibeguard --scan     # 🔒  security scan
+npx vibeguard --health   # 🏥  project health score
+npx vibeguard --graph    # 🗺️  build dependency graph
+npx vibeguard --dead     # ✂️  dead-code plan
+```
+
+---
+
+## 🪨 Caveman Mode — Save Tokens & Boost Speed
+
+> *"Why use many token when few do trick."*
+
+Makes your AI assistant reply like a smart caveman — drop filler, keep **100%**
+technical accuracy, answer in dense fragments. Inspired by the
+[`caveman`](https://github.com/JuliusBrussee/caveman) skill. *(Description rephrased for
+compliance.)*
+
+```bash
+vibeguard caveman on          # enable (default: full)
+vibeguard caveman on ultra    # max compression
+vibeguard caveman level lite  # change level, stays on
+vibeguard caveman status      # check state
+vibeguard caveman benchmark   # real measured savings per level
+vibeguard caveman off         # back to normal prose
+```
+
+**Levels**
+
+| Level | Effect | ~Output savings |
+| --- | --- | --- |
+| `lite` | Drop filler & hedging, keep full sentences | ~35% |
+| `full` | Drop articles, fragments OK (classic) | ~65% |
+| `ultra` | Telegraphic, abbreviations, arrows (X → Y) | ~75% |
+
+**Always know it's on** — every reply begins with a visible badge:
+
+```text
+🪨 Caveman mode: ON (ultra)
+```
+
+**Works across IDEs** — enabling writes an always-on rule the assistant reads each turn:
+
+- **Kiro** → `.kiro/steering/vibeguard-caveman.md` (`inclusion: always`)
+- **Cursor** → `.cursor/rules/vibeguard-caveman.mdc` (`alwaysApply: true`)
+- **Windsurf** → `.windsurf/rules/vibeguard-caveman.md` (`trigger: always_on`)
+- **CLAUDE.md · Copilot · Gemini · AGENTS.md · .windsurfrules · .clinerules** → a marker-fenced block, only if the file already exists (no repo litter)
+
+One-step setup: `vibeguard install --platform kiro --caveman ultra`.
+An AI agent can also toggle it live via the MCP `set_caveman` tool, and `vibeguard doctor` reports its status.
+
+> ⚠️ **Reload to activate.** Assistants read always-on rules at the **start of a chat**.
+> After `caveman on`, open a **new chat** (or reload the IDE window) so the rule loads.
+> Code, commits, and security warnings always stay in full prose — safety first.
+
+---
+
+## 🧭 Command Map
 
 | Command | Purpose |
 | --- | --- |
 | `vibeguard init` | Initialize `.vibeguard/config.json` |
-| `vibeguard map` | Build graph, tags, importance, HTML, and report outputs |
-| `vibeguard graph --no-open` | Generate interactive HTML dependency graph |
-| `vibeguard query "question"` | Ask graph-backed questions without reading every file |
-| `vibeguard path <source> <target>` | Find shortest path between graph nodes |
-| `vibeguard explain <node>` | Explain a file/node role and connections |
-| `vibeguard affected <node>` | Show transitive dependents impacted by a change |
-| `vibeguard pack "task"` | Create `.vibeguard/context-package.md` and `.json` |
-| `vibeguard benchmark` | Estimate token reduction versus full-repo reading |
-| `vibeguard security` | Scan secrets and framework security gaps |
-| `vibeguard security --fix gitignore` | Add missing secret files to `.gitignore` |
-| `vibeguard security --fix env` | Move detected secrets into `.env` |
-| `vibeguard attack` | Scan broader cyberattack patterns |
-| `vibeguard attack --ai` | Run optional LLM-assisted security review |
-| `vibeguard attack --ai --fix` | Generate and apply AI fixes with backups |
-| `vibeguard clean --plan` | Detect dead-code cleanup candidates |
-| `vibeguard clean --apply` | Move approved cleanup targets to trash |
-| `vibeguard trash list` | List recoverable trash entries |
-| `vibeguard trash restore <id\|path>` | Restore a soft-deleted file |
-| `vibeguard add <file.pdf>` | Extract PDF concepts and link them to the graph |
-| `vibeguard watch` | Rebuild graph data after file changes |
-| `vibeguard hook install` | Install pre-commit security hook |
-| `vibeguard hook graph-install` | Install post-commit graph rebuild hook |
-| `vibeguard config providers` | List supported LLM providers |
-| `vibeguard install --platform cursor` | Install editor/agent integration |
+| `vibeguard map` | Build graph, tags, importance, HTML & report |
+| `vibeguard graph --no-open` | Generate the interactive HTML graph |
+| `vibeguard query "question"` | Ask graph-backed questions, no full-file reads |
+| `vibeguard path <a> <b>` | Shortest path between two nodes |
+| `vibeguard explain <node>` | Explain a file/node role & connections |
+| `vibeguard affected <node>` | Transitive dependents impacted by a change |
+| `vibeguard flows` | Execution flows, bridges & knowledge gaps |
+| `vibeguard search "query"` | Hybrid keyword + semantic search (local) |
+| `vibeguard pack "task"` | Build `.vibeguard/context-package.md` + `.json` |
+| `vibeguard benchmark` | Estimate token reduction vs full-repo reading |
+| `vibeguard review` | Risk-scored review of changed files |
+| `vibeguard security` | Scan secrets & framework security gaps |
+| `vibeguard security --fix gitignore\|env` | Auto-fix the common gaps |
+| `vibeguard attack [--ai] [--fix]` | Cyberattack scan (+ optional AI review/fix) |
+| `vibeguard clean --plan \| --apply` | Detect dead code → recoverable trash |
+| `vibeguard trash list \| restore <id>` | Manage soft-deleted files |
+| `vibeguard add <file.pdf>` | Link PDF concepts into the graph |
+| `vibeguard watch` | Rebuild graph data on file changes |
+| `vibeguard hook install` | Pre-commit secret-blocking hook |
+| `vibeguard serve` (alias `mcp`) | Start the MCP server (live agent tools) |
+| `vibeguard caveman on\|off\|status\|level\|benchmark` | Control Caveman Mode |
+| `vibeguard install --platform <name>` | Install editor/agent integration |
 
-## JSON Contracts
+---
 
-Every machine-facing command supports `--json` and includes a `schemaVersion` field.
+## 🔌 JSON Contracts
+
+Every machine-facing command supports `--json` and emits a `schemaVersion`.
 
 ```bash
 vibeguard --json doctor
 vibeguard --json map
 vibeguard --json pack "refactor payments"
 ```
-
-Example:
 
 ```json
 {
@@ -156,99 +219,86 @@ Example:
 }
 ```
 
-## Context Packaging
+---
+
+## 📦 Context Packaging
 
 ```bash
 vibeguard pack "add validation to checkout form" --budget 12000 --radius 2
 ```
 
-VibeGuard ranks files using:
+VibeGuard ranks files by:
 
-1. Task term/tag matching
-2. Export, route, framework, and path-derived tags
+1. Task term / tag matching
+2. Export, route, framework & path-derived tags
 3. Graph distance from the best matches
-4. Importance scoring from dependents, imports, git activity, and route signals
-5. Token budget enforcement
+4. Importance (dependents, imports, git activity, route signals)
+5. Token-budget enforcement
 
-Outputs:
+→ Outputs `.vibeguard/context-package.md` and `.vibeguard/context-package.json`.
 
-- `.vibeguard/context-package.md`
-- `.vibeguard/context-package.json`
+---
 
-## Security and Attack Coverage
-
-Run local pattern scans:
+## 🛡️ Security & Attack Coverage
 
 ```bash
-vibeguard security
-vibeguard attack
-```
-
-Run optional AI-assisted review:
-
-```bash
-vibeguard config set-key <key> --provider openrouter
+vibeguard security                                   # local pattern scan
+vibeguard attack                                     # broader attack patterns
+vibeguard config set-key <key> --provider openrouter # optional AI review
 vibeguard attack --ai
 ```
 
-Supported providers include OpenRouter, OpenAI, Anthropic, Google Gemini, DeepSeek, Groq, Mistral, xAI, Together, Perplexity, Fireworks, DeepInfra, Moonshot/Kimi, Ollama, and custom OpenAI-compatible endpoints.
+Supported AI providers: OpenRouter, OpenAI, Anthropic, Google Gemini, DeepSeek, Groq,
+Mistral, xAI, Together, Perplexity, Fireworks, DeepInfra, Moonshot/Kimi, Ollama, and any
+custom OpenAI-compatible endpoint.
 
-## Editor and Agent Setup
+---
 
-```bash
-vibeguard install --platform kiro
-vibeguard install --platform cursor
-vibeguard install --platform claude
-vibeguard install --platform copilot
-vibeguard install --platform gemini
-vibeguard install --platform aider
-```
-
-Shortcut aliases:
+## 🤝 Editor & Agent Setup
 
 ```bash
-vibeguard kiro install
-vibeguard cursor install
-vibeguard claude install
-vibeguard copilot install
-vibeguard gemini install
-vibeguard aider install
+vibeguard install --platform kiro      # also: cursor, claude, copilot, gemini, aider
+vibeguard install --platform kiro --caveman ultra   # + enable Caveman in one step
 ```
 
-Use `uninstall` or `<platform> uninstall` to remove generated integration files. Unknown platforms are rejected instead of silently installing the wrong target.
+Shortcut aliases: `vibeguard kiro install`, `vibeguard cursor install`, etc.
+Use `uninstall` / `<platform> uninstall` to remove generated files. Unknown platforms are
+rejected rather than silently installing the wrong target.
 
-## Safety Model
+---
+
+## 🔐 Safety Model
 
 | Guarantee | Behavior |
 | --- | --- |
-| Local core | Graphing, security, health, dead-code, benchmark, query, and pack do not require cloud AI |
-| Read-only default | Mutations require explicit `--fix`, `--apply`, hook install, or integration install |
-| Dry runs | Mutating security and cleanup flows support `--dry-run` |
-| Recoverable cleanup | Removed files go to `.vibeguard-trash/` |
-| Project boundary | Safety checks reject paths outside the project root |
-| Machine contracts | JSON output is schema-versioned and covered by integration tests |
-| Secrets handling | LLM credentials are stored in `.vibeguard/credentials.json` with restrictive permissions where supported |
+| 🏠 Local core | Graph, security, health, dead-code, benchmark, query, pack & Caveman need no cloud AI |
+| 👀 Read-only default | Mutations require explicit `--fix`, `--apply`, hook install, or integration install |
+| 🧪 Dry runs | Mutating security & cleanup flows support `--dry-run` |
+| ♻️ Recoverable | Removed files go to `.vibeguard-trash/` |
+| 🚧 Project boundary | Safety checks reject paths outside the project root |
+| 📐 Machine contracts | JSON output is schema-versioned and integration-tested |
+| 🔑 Secrets | LLM credentials live in `.vibeguard/credentials.json` with restrictive perms where supported |
 
-## Files VibeGuard Writes
+---
+
+## 📁 Files VibeGuard Writes
 
 ```text
 .vibeguard/
-  config.json
-  graph.json
-  graph.html
-  GRAPH_REPORT.md
-  context-package.md
-  context-package.json
-  analysis-meta.json
-  documents.json
+  config.json            graph.json            graph.html
+  GRAPH_REPORT.md        context-package.md    context-package.json
+  analysis-meta.json     documents.json        caveman.json
 
-.vibeguard-trash/
-  <recoverable cleanup entries>
+.vibeguard-trash/        ← recoverable cleanup entries
 ```
 
-Integration commands may also create platform-specific files such as `.cursor/rules/vibeguard.mdc`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.gemini/CONTEXT.md`, or `.aider.context.md`.
+Integration commands may also create platform files such as
+`.kiro/steering/vibeguard.md`, `.cursor/rules/vibeguard.mdc`, `CLAUDE.md`,
+`.github/copilot-instructions.md`, `.gemini/CONTEXT.md`, or `.aider.context.md`.
 
-## Programmatic API
+---
+
+## 🧩 Programmatic API
 
 ```ts
 import {
@@ -256,41 +306,47 @@ import {
   serializeContextPackageForAgent,
 } from 'vibeguard';
 
-const contextPackage = await generateContextForEditor('fix auth login', {
+const pkg = await generateContextForEditor('fix auth login', {
   radius: 2,
   budget: 12000,
   mode: 'bugfix',
 });
 
-const markdown = serializeContextPackageForAgent(contextPackage);
+const markdown = serializeContextPackageForAgent(pkg);
 ```
 
-## Development
+---
+
+## 🛠️ Development
 
 ```bash
 git clone https://github.com/Faizan-8792/VIBEGUARD-.git
 cd VIBEGUARD-
 npm install
-npm run lint
-npm run build
-npm test
+npm run lint     # tsc --noEmit
+npm run build    # tsc
+npm test         # vitest — 319 tests
 npm pack --dry-run
 ```
 
-Current validation:
+Validation status: lint ✓ · build ✓ · `319` tests ✓ · `npm pack` includes `dist/`,
+`README.md`, `ROADMAP.md`, `LICENSE`, `package.json`.
 
-- `npm run lint` passes
-- `npm run build` passes
-- `npm test` passes with `223` tests
-- `npm pack --dry-run` includes `dist/`, `README.md`, `ROADMAP.md`, `LICENSE`, and `package.json`
+---
 
-## Honest Limits
+## ⚖️ Honest Limits
 
-- TypeScript and JavaScript use `ts-morph` AST analysis for import/export and semantic edges.
-- Python, Go, Java, and Markdown receive deep portable analysis for imports, exports, declared symbols, package scopes, same-package relationships, documentation references, and semantic call/type edges.
-- Dead-code results can have false positives around dynamic imports, reflection, generated files, and framework magic.
-- `attack --ai` and `attack --ai --fix` require a configured LLM provider and may use network access through that provider.
+- TS/JS use `ts-morph` AST analysis for imports/exports and semantic edges.
+- Python, Go, Java & Markdown get deep portable analysis (imports, exports, declared
+  symbols, package scopes, same-package links, doc references, semantic call/type edges).
+- Dead-code results can have false positives around dynamic imports, reflection, generated
+  files, and framework magic — always review a `--plan` before `--apply`.
+- `attack --ai` / `--fix` require a configured LLM provider and use that provider's network.
 
-## License
+---
 
-MIT — see `LICENSE`.
+<div align="center">
+
+**MIT licensed** — see [`LICENSE`](LICENSE) · Built for developers who want their AI to *understand* the codebase, not just read it.
+
+</div>

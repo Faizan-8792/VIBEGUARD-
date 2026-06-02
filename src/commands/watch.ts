@@ -110,9 +110,14 @@ async function rebuild(ctx: CommandContext, kind: string, changed?: string[]): P
       ? `${changed.length} file(s) [${kind}]`
       : kind;
     const time = new Date().toLocaleTimeString();
+    const { added, removed } = result.summary;
+    const deltaParts: string[] = [];
+    if (added.length > 0) deltaParts.push(brand.success(`+${added.length} added`));
+    if (removed.length > 0) deltaParts.push(brand.danger(`-${removed.length} removed`));
+    const delta = deltaParts.length > 0 ? ` ${brand.muted('•')} ${deltaParts.join(' ')}` : '';
     process.stdout.write(
       `  ${brand.muted(time)} ${statusIcon('success')} ${brand.success('Rebuilt')} ${brand.muted(label)} ` +
-      `${brand.info(`${result.summary.nodes} nodes, ${result.summary.edges} edges`)} ${brand.muted(`(${elapsed}ms)`)}\n`,
+      `${brand.info(`${result.summary.nodes} nodes, ${result.summary.edges} edges`)}${delta} ${brand.muted(`(${elapsed}ms)`)}\n`,
     );
   } catch (err) {
     process.stdout.write(`  ${statusIcon('error')} ${brand.danger('Rebuild failed:')} ${err instanceof Error ? err.message : String(err)}\n`);

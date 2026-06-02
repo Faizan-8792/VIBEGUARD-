@@ -35,6 +35,8 @@ export async function runMap(ctx: CommandContext): Promise<void> {
         edges: result.summary.edges,
         rebuilt: result.summary.rebuilt,
         skipped: result.summary.skipped,
+        added: result.summary.added,
+        removed: result.summary.removed,
       },
       report: {
         godNodes: report.godNodes,
@@ -56,6 +58,12 @@ export async function runMap(ctx: CommandContext): Promise<void> {
     output.push(keyValue('Edges', brand.info.bold(String(result.summary.edges))));
     output.push(keyValue('Rebuilt', brand.secondary(String(result.summary.rebuilt))));
     output.push(keyValue('Skipped', brand.muted(String(result.summary.skipped))));
+    if (result.summary.added.length > 0) {
+      output.push(keyValue('Added', brand.success(`+${result.summary.added.length}`)));
+    }
+    if (result.summary.removed.length > 0) {
+      output.push(keyValue('Removed', brand.danger(`-${result.summary.removed.length}`)));
+    }
     output.push('');
 
     // God nodes summary

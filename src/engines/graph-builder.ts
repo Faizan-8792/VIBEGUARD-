@@ -60,7 +60,16 @@ export interface AnalysisMeta {
 
 export interface GraphBuildResult {
   nodes: Map<string, GraphNode>;
-  summary: { nodes: number; edges: number; rebuilt: number; skipped: number };
+  summary: {
+    nodes: number;
+    edges: number;
+    rebuilt: number;
+    skipped: number;
+    /** Files that gained a node since the previous graph (newly created). */
+    added: string[];
+    /** Files whose node was pruned since the previous graph (deleted/excluded). */
+    removed: string[];
+  };
 }
 
 export const GRAPH_SCHEMA_VERSION = '2.2.0';
@@ -338,6 +347,22 @@ export async function buildGraph(
   await store.write('graph.json', graphData);
   await store.write('analysis-meta.json', meta);
 
+  // Compute create/delete deltas against the previous graph so callers can
+  // surface exactly which files entered or left the map this run. A new file
+  // appears in the current node set but not the previous one; a deleted (or
+  // newly-excluded) file is in the previous graph but no longer resolved.
+  // The first-ever build has no previous graph — that's an initial population,
+  // not a change, so both deltas stay empty rather than flagging every file.
+  let added: string[] = [];
+  let removed: string[] = [];
+  if (existingGraph) {
+    const previousNodeKeys = Object.keys(existingGraph.nodes);
+    const previousSet = new Set(previousNodeKeys);
+    const currentSet = new Set(nodes.keys());
+    added = [...currentSet].filter((f) => !previousSet.has(f)).sort();
+    removed = previousNodeKeys.filter((f) => !currentSet.has(f)).sort();
+  }
+
   return {
     nodes,
     summary: {
@@ -345,6 +370,8 @@ export async function buildGraph(
       edges: edgeCount,
       rebuilt: filesToRebuild.length,
       skipped: skippedCount,
+      added,
+      removed,
     },
   };
 }
