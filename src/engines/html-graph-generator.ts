@@ -3,18 +3,8 @@ import { join } from 'node:path';
 import type { GraphData, GraphNode } from './graph-builder.js';
 
 /**
- * Generates an interactive 3D dependency-graph visualization using
- * `3d-force-graph` (Three.js / WebGL, loaded from CDN). The output is a
- * self-contained HTML file that opens in any browser.
- *
- * Interaction model (no continuous auto-rotation / drift):
- *  - Hold and drag        → orbit/rotate the graph in 3D
- *  - Scroll wheel         → zoom in / out
- *  - Hover a node         → tooltip with imports / dependents / exports
- *  - Search / Reset View  → focus a node / fit the whole graph
- *
- * The force simulation runs briefly to lay the graph out, then freezes, so the
- * scene only moves when the user interacts with it.
+ * Generates an interactive HTML graph visualization using vis.js (CDN).
+ * The output is a self-contained HTML file that can be opened in any browser.
  */
 export async function generateHTMLGraph(
   projectRoot: string,
@@ -24,7 +14,8 @@ export async function generateHTMLGraph(
   const nodes = Object.values(graphData.nodes);
   const filePath = outputPath ?? join(projectRoot, '.vibeguard', 'graph.html');
 
-  const graphNodes = nodes.map((node) => ({
+  // Build vis.js data
+  const visNodes = nodes.map((node) => ({
     id: node.file,
     label: shortenLabel(node.file),
     title: buildTooltip(node),
@@ -32,22 +23,23 @@ export async function generateHTMLGraph(
     value: node.dependents.length + node.imports.length + 1,
   }));
 
-  const links: Array<{ source: string; target: string }> = [];
+  const visEdges: Array<{ from: string; to: string }> = [];
   const seenEdges = new Set<string>();
   for (const node of nodes) {
     for (const imp of node.imports) {
+      // Resolve .js → .ts for display
       const resolved = resolveTarget(imp, graphData);
       if (resolved && resolved !== node.file) {
         const key = `${node.file}→${resolved}`;
         if (!seenEdges.has(key)) {
           seenEdges.add(key);
-          links.push({ source: node.file, target: resolved });
+          visEdges.push({ from: node.file, to: resolved });
         }
       }
     }
   }
 
-  const html = buildHTML(graphNodes, links, nodes.length, links.length);
+  const html = buildHTML(visNodes, visEdges, nodes.length, visEdges.length);
   await writeFile(filePath, html, 'utf-8');
   return filePath;
 }
@@ -70,7 +62,6 @@ function getGroup(file: string): string {
   if (file.includes('/engines/')) return 'engines';
   if (file.includes('/storage/')) return 'storage';
   if (file.includes('/utils/')) return 'utils';
-  if (file.includes('/mcp/')) return 'mcp';
   if (file.includes('test/') || file.includes('.test.')) return 'tests';
   return 'core';
 }
@@ -86,7 +77,7 @@ function resolveTarget(imp: string, graphData: GraphData): string | null {
 
 function buildHTML(
   nodes: Array<{ id: string; label: string; title: string; group: string; value: number }>,
-  links: Array<{ source: string; target: string }>,
+  edges: Array<{ from: string; to: string }>,
   nodeCount: number,
   edgeCount: number,
 ): string {
@@ -95,182 +86,234 @@ function buildHTML(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VibeGuard — 3D Dependency Graph</title>
-  <script src="https://unpkg.com/three-spritetext"></script>
-  <script src="https://unpkg.com/3d-force-graph"></script>
+  <title>VibeGuard — Dependency Graph</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
     body {
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      background: #0f0f23;
-      color: #e0e0e0;
+      background: linear-gradient(135deg, #eef2fb 0%, #e7ecf7 100%);
+      color: #2b3245;
+      height: 100vh;
+      overflow: hidden;
     }
     #header {
-      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-      background: linear-gradient(135deg, rgba(26,26,46,0.95) 0%, rgba(22,33,62,0.95) 100%);
-      padding: 14px 22px;
-      display: flex; align-items: center; justify-content: space-between;
-      border-bottom: 1px solid #7c3aed33; backdrop-filter: blur(8px);
+      background: linear-gradient(135deg, #ffffff 0%, #eef1fa 100%);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #d8def0;
+      box-shadow: 0 1px 8px rgba(80, 90, 130, 0.06);
     }
-    #header h1 { font-size: 17px; color: #7c3aed; display: flex; align-items: center; gap: 8px; }
-    #header .stats { font-size: 12px; color: #6b7280; }
-    #header .stats span { color: #06b6d4; font-weight: bold; }
+    #header h1 {
+      font-size: 18px;
+      color: #6d28d9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #header .stats {
+      font-size: 13px;
+      color: #8a90a2;
+    }
+    #header .stats span {
+      color: #0891b2;
+      font-weight: bold;
+    }
     #controls {
-      position: absolute; top: 64px; left: 22px; z-index: 10;
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      padding: 12px 24px;
+      background: #ffffff;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid #e3e7f2;
     }
     #controls input {
-      background: rgba(15,15,35,0.9); border: 1px solid #333; border-radius: 6px;
-      padding: 7px 12px; color: #e0e0e0; font-size: 12px; width: 240px; outline: none;
+      background: #f5f7fc;
+      border: 1px solid #d8def0;
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: #2b3245;
+      font-size: 13px;
+      width: 300px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    #controls input:focus { border-color: #7c3aed; }
+    #controls input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.12); }
     #controls button {
-      background: rgba(124,58,237,0.9); color: #fff; border: none; border-radius: 6px;
-      padding: 7px 14px; cursor: pointer; font-size: 12px;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, transform 0.05s;
     }
     #controls button:hover { background: #6d28d9; }
+    #controls button:active { transform: translateY(1px); }
+    #controls button.paused { background: #0891b2; }
+    #controls button.paused:hover { background: #0e7490; }
     .legend {
-      position: absolute; bottom: 16px; left: 22px; z-index: 10;
-      display: flex; gap: 14px; font-size: 11px; flex-wrap: wrap;
-      background: rgba(15,15,35,0.7); padding: 8px 14px; border-radius: 8px;
-      backdrop-filter: blur(8px);
+      display: flex;
+      gap: 16px;
+      margin-left: auto;
+      font-size: 12px;
+      color: #5b6276;
     }
-    .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-    #hint {
-      position: absolute; bottom: 16px; right: 22px; z-index: 10;
-      font-size: 11px; color: #6b7280;
-      background: rgba(15,15,35,0.7); padding: 8px 14px; border-radius: 8px;
-      backdrop-filter: blur(8px);
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    #graph { width: 100%; height: 100%; }
-    .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280; }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px #ffffff, 0 1px 3px rgba(0,0,0,0.15);
+    }
+    #graph { width: 100%; height: calc(100vh - 110px); }
+    #tooltip {
+      position: absolute;
+      background: #ffffff;
+      border: 1px solid #d8def0;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #2b3245;
+      display: none;
+      z-index: 100;
+      max-width: 300px;
+      box-shadow: 0 6px 24px rgba(80, 90, 130, 0.18);
+    }
   </style>
 </head>
 <body>
   <div id="header">
-    <h1>🛡️ VibeGuard — 3D Dependency Graph</h1>
+    <h1>🛡️ VibeGuard — Dependency Graph</h1>
     <div class="stats">
-      <span>${nodeCount}</span> nodes &nbsp;•&nbsp; <span>${edgeCount}</span> edges &nbsp;•&nbsp; ${new Date().toLocaleDateString()}
+      <span>${nodeCount}</span> nodes &nbsp;•&nbsp; <span>${edgeCount}</span> edges &nbsp;•&nbsp; Generated ${new Date().toLocaleDateString()}
     </div>
   </div>
   <div id="controls">
-    <input type="text" id="search" placeholder="🔍 Search files..." autocomplete="off" />
-    <button id="btn-reset">Reset View</button>
-    <button id="btn-labels">Toggle Labels</button>
-    <button id="btn-spin">Auto-Rotate: Off</button>
+    <input type="text" id="search" placeholder="🔍 Search files..." />
+    <button onclick="resetView()">⤢ Reset View</button>
+    <button id="play-pause-btn" onclick="togglePhysics()">⏸ Pause</button>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>Core</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Commands</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Engines</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Storage</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#6b7280"></div>Utils</div>
+    </div>
   </div>
-  <div class="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>Core</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Commands</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Engines</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Storage</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>MCP</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#6b7280"></div>Utils</div>
-  </div>
-  <div id="hint">Drag to rotate • Scroll to zoom • Hover for details</div>
   <div id="graph"></div>
+  <div id="tooltip"></div>
 
   <script>
-    const graphData = {
-      nodes: ${JSON.stringify(nodes)},
-      links: ${JSON.stringify(links)},
-    };
+    const nodesData = ${JSON.stringify(nodes)};
+    const edgesData = ${JSON.stringify(edges)};
 
     const groupColors = {
-      core: '#7c3aed', commands: '#06b6d4', engines: '#10b981',
-      storage: '#f59e0b', mcp: '#ec4899', utils: '#6b7280', tests: '#374151',
+      core: { background: '#7c3aed', border: '#6d28d9', highlight: { background: '#9333ea', border: '#7c3aed' } },
+      commands: { background: '#06b6d4', border: '#0891b2', highlight: { background: '#22d3ee', border: '#06b6d4' } },
+      engines: { background: '#10b981', border: '#059669', highlight: { background: '#34d399', border: '#10b981' } },
+      storage: { background: '#f59e0b', border: '#d97706', highlight: { background: '#fbbf24', border: '#f59e0b' } },
+      utils: { background: '#6b7280', border: '#4b5563', highlight: { background: '#9ca3af', border: '#6b7280' } },
+      tests: { background: '#374151', border: '#1f2937', highlight: { background: '#4b5563', border: '#374151' } },
     };
 
-    const el = document.getElementById('graph');
+    const nodes = new vis.DataSet(nodesData.map(n => ({
+      ...n,
+      color: groupColors[n.group] || groupColors.core,
+      font: { color: '#2b3245', size: 12, strokeWidth: 3, strokeColor: '#ffffff' },
+      shape: 'dot',
+      scaling: { min: 8, max: 30 },
+    })));
 
-    if (!graphData.nodes.length || typeof ForceGraph3D === 'undefined') {
-      el.innerHTML = '<div class="empty">' +
-        (graphData.nodes.length ? 'Could not load 3D renderer (offline?).' : 'No graph data. Run: vibeguard map') +
-        '</div>';
-    } else {
-      let showLabels = true;
+    const edges = new vis.DataSet(edgesData.map(e => ({
+      ...e,
+      arrows: 'to',
+      color: { color: 'rgba(80, 90, 130, 0.25)', highlight: '#7c3aed' },
+      smooth: { type: 'cubicBezier', roundness: 0.4 },
+    })));
 
-      const Graph = ForceGraph3D()(el)
-        .backgroundColor('#0f0f23')
-        .graphData(graphData)
-        .nodeId('id')
-        .nodeVal(n => Math.max(1, n.value))
-        .nodeColor(n => groupColors[n.group] || groupColors.core)
-        .nodeOpacity(0.95)
-        .nodeResolution(12)
-        .nodeLabel(n => '<div style="font-family:monospace;font-size:12px;background:#1a1a2e;border:1px solid #7c3aed;border-radius:6px;padding:8px 10px;color:#e0e0e0">' + n.title + '</div>')
-        .linkColor(() => 'rgba(255,255,255,0.18)')
-        .linkWidth(0.5)
-        .linkDirectionalArrowLength(2.5)
-        .linkDirectionalArrowRelPos(1)
-        .linkDirectionalParticles(0)
-        .enableNodeDrag(false)        // dragging always orbits the camera (no node-dragging)
-        .enableNavigationControls(true)
-        .showNavInfo(false)
-        .cooldownTicks(120);          // settle the layout, then freeze (no perpetual drift)
+    const container = document.getElementById('graph');
+    const network = new vis.Network(container, { nodes, edges }, {
+      physics: {
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: { gravitationalConstant: -80, springLength: 120 },
+        stabilization: { iterations: 200 },
+      },
+      interaction: { hover: true, tooltipDelay: 200, zoomView: true },
+      layout: { improvedLayout: true },
+    });
 
-      // Persistent text labels via three-spritetext (in addition to the sphere).
-      function applyLabels() {
-        Graph.nodeThreeObjectExtend(true).nodeThreeObject(n => {
-          if (!showLabels || typeof SpriteText === 'undefined') return null;
-          const sprite = new SpriteText(n.label);
-          sprite.color = '#c9d1d9';
-          sprite.textHeight = 3;
-          sprite.position.y = -6;
-          return sprite;
-        });
+    let physicsEnabled = true;
+    const DIM_OPACITY = 0.15;
+
+    function resetView() { network.fit({ animation: true }); }
+
+    // Play/Pause: pause freezes all node movement; play resumes the simulation.
+    function togglePhysics() {
+      physicsEnabled = !physicsEnabled;
+      network.setOptions({ physics: { enabled: physicsEnabled } });
+      const btn = document.getElementById('play-pause-btn');
+      if (btn) {
+        btn.textContent = physicsEnabled ? '⏸ Pause' : '▶ Play';
+        btn.classList.toggle('paused', !physicsEnabled);
       }
-      applyLabels();
-
-      // Explicitly disable auto-rotation — the scene is still until the user drags it.
-      const controls = Graph.controls();
-      if (controls) {
-        controls.autoRotate = false;
-        controls.enableZoom = true;   // scroll to zoom
-        controls.enableRotate = true; // drag to rotate
-      }
-
-      // Fit the whole graph once the initial layout settles.
-      Graph.onEngineStop(() => Graph.zoomToFit(600, 60));
-
-      // Controls
-      document.getElementById('btn-reset').addEventListener('click', () => Graph.zoomToFit(600, 60));
-
-      document.getElementById('btn-labels').addEventListener('click', () => {
-        showLabels = !showLabels;
-        applyLabels();
-      });
-
-      const spinBtn = document.getElementById('btn-spin');
-      spinBtn.addEventListener('click', () => {
-        if (!controls) return;
-        controls.autoRotate = !controls.autoRotate;
-        controls.autoRotateSpeed = 1.2;
-        spinBtn.textContent = 'Auto-Rotate: ' + (controls.autoRotate ? 'On' : 'Off');
-      });
-
-      // Search → focus the matching node by flying the camera to it.
-      document.getElementById('search').addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase().trim();
-        if (!q) return;
-        const match = graphData.nodes.find(n => n.id.toLowerCase().includes(q));
-        if (match && match.x !== undefined) {
-          const dist = 80;
-          const ratio = 1 + dist / Math.hypot(match.x, match.y, match.z || 0);
-          Graph.cameraPosition(
-            { x: match.x * ratio, y: match.y * ratio, z: (match.z || 0) * ratio },
-            match,
-            1000,
-          );
-        }
-      });
-
-      window.addEventListener('resize', () => {
-        Graph.width(window.innerWidth).height(window.innerHeight);
-      });
     }
+
+    // Fully show nodes where keep(node) is true; dim the rest.
+    function setNodeOpacity(keep) {
+      nodes.forEach(n => nodes.update({ id: n.id, opacity: keep(n) ? 1 : DIM_OPACITY }));
+    }
+
+    // Highlight a node and its direct neighbours; dim everything else.
+    function highlightConnections(focusId) {
+      const connected = network.getConnectedNodes(focusId);
+      setNodeOpacity(n => n.id === focusId || connected.includes(n.id));
+    }
+
+    // Restore full opacity to every node.
+    function restoreOpacity() {
+      setNodeOpacity(() => true);
+    }
+
+    // Search
+    document.getElementById('search').addEventListener('input', function(e) {
+      const query = e.target.value.toLowerCase();
+      if (!query) {
+        restoreOpacity();
+        return;
+      }
+      setNodeOpacity(n => n.id.toLowerCase().includes(query) || n.label.toLowerCase().includes(query));
+      const matches = nodes.get().filter(n => n.id.toLowerCase().includes(query));
+      if (matches.length === 1) {
+        network.focus(matches[0].id, { scale: 1.5, animation: true });
+      }
+    });
+
+    // Click to highlight connections
+    network.on('click', function(params) {
+      if (params.nodes.length > 0) {
+        highlightConnections(params.nodes[0]);
+      } else {
+        restoreOpacity();
+      }
+    });
+
+    // Hover to highlight which files are linked (dim the rest); restore on blur.
+    network.on('hoverNode', function(params) {
+      highlightConnections(params.node);
+    });
+    network.on('blurNode', restoreOpacity);
   </script>
 </body>
 </html>`;

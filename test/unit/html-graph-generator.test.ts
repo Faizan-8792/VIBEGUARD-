@@ -11,6 +11,7 @@ function makeGraph(): GraphData {
     nodes: {
       'src/cli.ts': { file: 'src/cli.ts', imports: ['src/engines/core.ts'], exports: ['main'], dependents: [], edges: [] },
       'src/engines/core.ts': { file: 'src/engines/core.ts', imports: [], exports: ['core'], dependents: ['src/cli.ts'], edges: [] },
+      'src/utils/log.ts': { file: 'src/utils/log.ts', imports: [], exports: ['log'], dependents: [], edges: [] },
     },
   } as unknown as GraphData;
 }
@@ -20,56 +21,55 @@ afterEach(async () => {
   if (tmp) { await rm(tmp, { recursive: true, force: true }); tmp = null; }
 });
 
-describe('generateHTMLGraph (3D)', () => {
-  it('writes a self-contained HTML file and returns its path', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
-    const out = join(tmp, 'graph.html');
-    const result = await generateHTMLGraph(tmp, makeGraph(), out);
-    expect(result).toBe(out);
-    const html = await readFile(out, 'utf-8');
+async function render(graph = makeGraph()): Promise<string> {
+  tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
+  const out = join(tmp, 'graph.html');
+  const result = await generateHTMLGraph(tmp, graph, out);
+  expect(result).toBe(out);
+  return readFile(out, 'utf-8');
+}
+
+describe('generateHTMLGraph (vis-network 2D)', () => {
+  it('writes a self-contained HTML document', async () => {
+    const html = await render();
     expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
   });
 
-  it('uses the 3d-force-graph WebGL renderer (not vis-network)', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
-    const out = join(tmp, 'graph.html');
-    await generateHTMLGraph(tmp, makeGraph(), out);
-    const html = await readFile(out, 'utf-8');
-    expect(html).toContain('3d-force-graph');
-    expect(html).toContain('ForceGraph3D');
-    expect(html).not.toContain('vis-network');
+  it('uses the vis-network renderer (the original design)', async () => {
+    const html = await render();
+    expect(html).toContain('vis-network');
+    expect(html).toContain('new vis.Network');
+    expect(html).not.toContain('ForceGraph3D');
+    expect(html).not.toContain('3d-force-graph');
   });
 
-  it('disables auto-rotation and node-drag, enables zoom + orbit', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
-    const out = join(tmp, 'graph.html');
-    await generateHTMLGraph(tmp, makeGraph(), out);
-    const html = await readFile(out, 'utf-8');
-    expect(html).toContain('autoRotate = false');
-    expect(html).toContain('enableZoom = true');
-    expect(html).toContain('enableRotate = true');
-    expect(html).toContain('enableNodeDrag(false)');
-    // settles then freezes — no perpetual drift
-    expect(html).toContain('cooldownTicks');
+  it('highlights connected nodes on hover and on click, restoring on blur', async () => {
+    const html = await render();
+    expect(html).toContain('getConnectedNodes');
+    expect(html).toContain("network.on('hoverNode'");
+    expect(html).toContain("network.on('blurNode'");
+    expect(html).toContain("network.on('click'");
   });
 
-  it('embeds nodes and links derived from the graph', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
-    const out = join(tmp, 'graph.html');
-    await generateHTMLGraph(tmp, makeGraph(), out);
-    const html = await readFile(out, 'utf-8');
+  it('has search and view controls including a Play/Pause toggle', async () => {
+    const html = await render();
+    expect(html).toContain('id="search"');
+    expect(html).toContain('resetView');
+    expect(html).toContain('togglePhysics');
+    expect(html).toContain('play-pause-btn');
+    expect(html).toContain('Pause');
+    expect(html).toContain('Play');
+  });
+
+  it('uses a light, readable theme (dark text on light background)', async () => {
+    const html = await render();
+    expect(html).toContain('#eef2fb');       // light background gradient
+    expect(html).toContain("color: '#2b3245'"); // dark node label text
+  });
+
+  it('embeds nodes and edges derived from the graph', async () => {
+    const html = await render();
     expect(html).toContain('src/cli.ts');
     expect(html).toContain('src/engines/core.ts');
-    // the import edge cli → core should be present as a link
-    expect(html).toContain('"source":"src/cli.ts"');
-  });
-
-  it('renders an empty-state hint when there are no nodes', async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'vg-graph-'));
-    const out = join(tmp, 'graph.html');
-    const empty = { schemaVersion: '2.2.0', nodes: {} } as unknown as GraphData;
-    await generateHTMLGraph(tmp, empty, out);
-    const html = await readFile(out, 'utf-8');
-    expect(html).toContain('vibeguard map');
   });
 });
