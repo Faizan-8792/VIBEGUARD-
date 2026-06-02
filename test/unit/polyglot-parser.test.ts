@@ -52,6 +52,32 @@ describe('Polyglot Parser — Python', () => {
     expect(result.exports).toContain('foo');
     expect(result.exports).toContain('bar');
   });
+
+  it('captures aliases, declared symbols, and cross-file symbol uses', () => {
+    const result = parseFile('app/views.py', [
+      'from app.services import UserService as Service',
+      'import app.models as models',
+      '',
+      'async def handler():',
+      '    return Service(models.User())',
+    ].join('\n'));
+
+    expect(result.importBindings).toContainEqual({
+      module: 'app.services',
+      imported: 'UserService',
+      local: 'Service',
+      kind: 'named',
+    });
+    expect(result.importBindings).toContainEqual({
+      module: 'app.models',
+      imported: '*',
+      local: 'models',
+      kind: 'module',
+    });
+    expect(result.declaredSymbols?.some((symbol) => symbol.name === 'handler')).toBe(true);
+    expect(result.symbolUses?.some((use) => use.symbol === 'Service' && use.kind === 'call')).toBe(true);
+    expect(result.symbolUses?.some((use) => use.symbol === 'models.User' && use.member === 'User')).toBe(true);
+  });
 });
 
 describe('Polyglot Parser — Go', () => {
@@ -80,6 +106,27 @@ describe('Polyglot Parser — Go', () => {
     expect(result.exports).toContain('UserService');
     expect(result.exports).not.toContain('privateFunc');
   });
+
+  it('captures package, import aliases, and unexported declarations for same-package analysis', () => {
+    const result = parseFile('internal/auth/handler.go', [
+      'package auth',
+      'import authsvc "github.com/acme/app/internal/service"',
+      'func Handle() { validateToken(); authsvc.Login() }',
+      'func validateToken() bool { return true }',
+    ].join('\n'));
+
+    expect(result.packageName).toBe('auth');
+    expect(result.importBindings).toContainEqual({
+      module: 'github.com/acme/app/internal/service',
+      imported: '*',
+      local: 'authsvc',
+      kind: 'module',
+    });
+    expect(result.exports).toContain('Handle');
+    expect(result.exports).not.toContain('validateToken');
+    expect(result.declaredSymbols?.some((symbol) => symbol.name === 'validateToken' && !symbol.exported)).toBe(true);
+    expect(result.symbolUses?.some((use) => use.symbol === 'authsvc.Login')).toBe(true);
+  });
 });
 
 describe('Polyglot Parser — Java', () => {
@@ -101,6 +148,29 @@ describe('Polyglot Parser — Java', () => {
     expect(result.exports).toContain('UserController');
     expect(result.exports).toContain('package:com.example.app');
   });
+
+  it('captures static imports, same-package type uses, and constructor references', () => {
+    const result = parseFile('src/main/java/com/example/UserController.java', [
+      'package com.example;',
+      'import static com.example.Security.requireUser;',
+      'public class UserController {',
+      '  private UserService service;',
+      '  public void handle() {',
+      '    requireUser();',
+      '    new UserService().load();',
+      '  }',
+      '}',
+    ].join('\n'));
+
+    expect(result.importBindings).toContainEqual({
+      module: 'com.example.Security.requireUser',
+      imported: 'requireUser',
+      local: 'requireUser',
+      kind: 'static',
+    });
+    expect(result.symbolUses?.some((use) => use.symbol === 'requireUser' && use.kind === 'call')).toBe(true);
+    expect(result.symbolUses?.some((use) => use.symbol === 'UserService' && use.kind === 'type-reference')).toBe(true);
+  });
 });
 
 describe('Polyglot Parser — Markdown', () => {
@@ -119,6 +189,19 @@ describe('Polyglot Parser — Markdown', () => {
     // External URLs are not tracked as imports
     expect(result.imports).not.toContain('https://example.com');
     expect(result.references).toContain('utils/helper.py');
+    expect(result.imports).toContain('utils/helper.py');
+  });
+
+  it('extracts wiki links and plain code-path references', () => {
+    const result = parseFile('docs/architecture.md', [
+      '# Architecture',
+      'See [[docs/setup.md]] and app/main.py.',
+      'The handler lives at `internal/auth/handler.go`.',
+    ].join('\n'));
+
+    expect(result.imports).toContain('docs/setup.md');
+    expect(result.imports).toContain('app/main.py');
+    expect(result.imports).toContain('internal/auth/handler.go');
   });
 });
 

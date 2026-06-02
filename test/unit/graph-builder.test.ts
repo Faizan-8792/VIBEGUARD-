@@ -98,7 +98,7 @@ describe('Graph Builder', () => {
 
     const graph = await loadGraph(testDir);
     expect(graph).not.toBeNull();
-    expect(graph!.schemaVersion).toBe('2.1.0');
+    expect(graph!.schemaVersion).toBe('2.2.0');
     expect(graph!.nodes['src/index.ts']).toBeDefined();
   });
 

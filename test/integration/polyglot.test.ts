@@ -58,6 +58,33 @@ describe('Integration: Polyglot graph building', () => {
     expect(result.summary.edges).toBeGreaterThan(0);
   });
 
+  it('adds Python semantic call edges for imported classes and aliases', async () => {
+    await writeFiles({
+      'app/views.py': [
+        'from app.services import UserService as Service',
+        '',
+        'def handle():',
+        '    return Service().load()',
+      ].join('\n'),
+      'app/services.py': [
+        'class UserService:',
+        '    def load(self):',
+        '        return []',
+      ].join('\n'),
+    });
+
+    const result = await buildGraph(testDir, ['app/views.py', 'app/services.py'], config, logger);
+    const view = result.nodes.get('app/views.py');
+    const semanticEdge = view?.edges?.find((edge) =>
+      edge.target === 'app/services.py' &&
+      edge.type === 'call' &&
+      edge.symbols?.includes('UserService')
+    );
+
+    expect(semanticEdge).toBeDefined();
+    expect(semanticEdge!.confidenceLabel).toBe('INFERRED');
+  });
+
   it('connects a Java project graph by fully-qualified imports', async () => {
     await writeFiles({
       'src/main/java/com/example/app/UserController.java':
@@ -77,6 +104,67 @@ describe('Integration: Polyglot graph building', () => {
 
     const service = result.nodes.get('src/main/java/com/example/app/UserService.java');
     expect(service!.dependents).toContain('src/main/java/com/example/app/UserController.java');
+  });
+
+  it('adds Go semantic edges between files in the same package without imports', async () => {
+    await writeFiles({
+      'internal/auth/handler.go': [
+        'package auth',
+        'func Handle() bool {',
+        '  return validateToken()',
+        '}',
+      ].join('\n'),
+      'internal/auth/tokens.go': [
+        'package auth',
+        'func validateToken() bool {',
+        '  return true',
+        '}',
+      ].join('\n'),
+    });
+
+    const files = ['internal/auth/handler.go', 'internal/auth/tokens.go'];
+    const result = await buildGraph(testDir, files, config, logger);
+    const handler = result.nodes.get('internal/auth/handler.go');
+    const semanticEdge = handler?.edges?.find((edge) =>
+      edge.target === 'internal/auth/tokens.go' &&
+      edge.type === 'call' &&
+      edge.symbols?.includes('validateToken')
+    );
+
+    expect(semanticEdge).toBeDefined();
+  });
+
+  it('adds Java semantic edges for same-package classes without explicit imports', async () => {
+    await writeFiles({
+      'src/main/java/com/example/app/UserController.java': [
+        'package com.example.app;',
+        'public class UserController {',
+        '  private UserService service;',
+        '  public void handle() {',
+        '    new UserService().load();',
+        '  }',
+        '}',
+      ].join('\n'),
+      'src/main/java/com/example/app/UserService.java': [
+        'package com.example.app;',
+        'class UserService {',
+        '  public void load() {}',
+        '}',
+      ].join('\n'),
+    });
+
+    const files = [
+      'src/main/java/com/example/app/UserController.java',
+      'src/main/java/com/example/app/UserService.java',
+    ];
+    const result = await buildGraph(testDir, files, config, logger);
+    const controller = result.nodes.get('src/main/java/com/example/app/UserController.java');
+    const semanticEdge = controller?.edges?.find((edge) =>
+      edge.target === 'src/main/java/com/example/app/UserService.java' &&
+      edge.symbols?.includes('UserService')
+    );
+
+    expect(semanticEdge).toBeDefined();
   });
 
   it('detects Python security vulnerabilities', async () => {
@@ -154,5 +242,24 @@ describe('Integration: Polyglot graph building', () => {
 
     const code = result.nodes.get('app/main.py');
     expect(code!.dependents).toContain('docs/architecture.md');
+  });
+
+  it('links markdown plain code paths and inline references to source files', async () => {
+    await writeFiles({
+      'docs/notes.md': [
+        '# Notes',
+        'Entrypoint: app/main.py',
+        'Handler: `internal/auth/handler.go`',
+      ].join('\n'),
+      'app/main.py': 'def run():\n    pass\n',
+      'internal/auth/handler.go': 'package auth\nfunc Handle() {}\n',
+    });
+
+    const files = ['docs/notes.md', 'app/main.py', 'internal/auth/handler.go'];
+    const result = await buildGraph(testDir, files, config, logger);
+    const notes = result.nodes.get('docs/notes.md');
+
+    expect(notes!.imports).toContain('app/main.py');
+    expect(notes!.imports).toContain('internal/auth/handler.go');
   });
 });

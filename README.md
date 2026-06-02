@@ -5,13 +5,15 @@
   Build dependency graphs, generate focused AI context, scan security risks, find dead code, and wire the results into your editor or agent.
 </p>
 
-<p align="center">
-  <img alt="Node >=18" src="https://img.shields.io/badge/node-%3E%3D18-22c55e?style=for-the-badge" />
-  <img alt="TypeScript" src="https://img.shields.io/badge/typescript-strict-3178c6?style=for-the-badge" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-215%20passing-16a34a?style=for-the-badge" />
-  <img alt="Health" src="https://img.shields.io/badge/health-93%2F100-7c3aed?style=for-the-badge" />
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-f59e0b?style=for-the-badge" />
-</p>
+<div align="center">
+
+[![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-22c55e?style=for-the-badge)](https://nodejs.org/)
+[![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-223%20passing-16a34a?style=for-the-badge)](#development)
+[![Health](https://img.shields.io/badge/health-93%2F100-7c3aed?style=for-the-badge)](#project-snapshot)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f59e0b?style=for-the-badge)](LICENSE)
+
+</div>
 
 ---
 
@@ -37,12 +39,12 @@ Measured against this repository:
 
 | Signal | Result |
 | --- | --- |
-| Test suite | `215` passing tests across unit, integration, and property-based coverage |
+| Test suite | `223` passing tests across unit, integration, and property-based coverage |
 | Type gate | `npm run lint` and `npm run build` pass |
 | Health score | `93/100` |
 | Dependency graph | `59` nodes, `227` edges |
 | Security scan | `0` critical/high/medium/low/info findings |
-| Token benchmark | Graph read estimate is `80.9%` smaller than full repo read |
+| Token benchmark | Graph read estimate is `88.4%` smaller than full repo read |
 
 ## Features
 
@@ -52,7 +54,7 @@ Measured against this repository:
 - **Attack scanner:** checks SQLi, XSS, SSRF, command injection, path traversal, weak crypto, open redirect, brute force, OTP abuse, DDoS-style missing rate limits, and more.
 - **Dead-code cleanup:** plans unused file/export cleanup and moves applied removals into `.vibeguard-trash/` for recovery.
 - **Graph Q&A:** answers graph-backed questions, shortest paths, node explanations, and affected-node impact analysis.
-- **Polyglot coverage:** deep TypeScript/JavaScript analysis plus lightweight Python, Go, Java, Markdown, and PDF concept support.
+- **Deep polyglot coverage:** TypeScript/JavaScript, Python, Go, Java, and Markdown all get language-aware imports, exports, declared symbols, package metadata, and semantic graph edges.
 - **Agent integrations:** installs guidance for Kiro, Cursor, Claude Code, GitHub Copilot, Gemini, and Aider.
 
 ## Install
@@ -279,17 +281,16 @@ Current validation:
 
 - `npm run lint` passes
 - `npm run build` passes
-- `npm test` passes with `215` tests
+- `npm test` passes with `223` tests
 - `npm pack --dry-run` includes `dist/`, `README.md`, `ROADMAP.md`, `LICENSE`, and `package.json`
 
 ## Honest Limits
 
-- TypeScript and JavaScript receive the deepest AST-based analysis.
-- Python, Go, Java, and Markdown support is intentionally lightweight and pattern-based.
+- TypeScript and JavaScript use `ts-morph` AST analysis for import/export and semantic edges.
+- Python, Go, Java, and Markdown receive deep portable analysis for imports, exports, declared symbols, package scopes, same-package relationships, documentation references, and semantic call/type edges.
 - Dead-code results can have false positives around dynamic imports, reflection, generated files, and framework magic.
 - `attack --ai` and `attack --ai --fix` require a configured LLM provider and may use network access through that provider.
 
 ## License
 
 MIT — see `LICENSE`.
-

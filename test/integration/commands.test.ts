@@ -122,7 +122,7 @@ describe('Integration: map command', () => {
   it('creates graph.json file', async () => {
     const graphContent = await readFile(join(projectDir, '.vibeguard', 'graph.json'), 'utf-8');
     const graph = JSON.parse(graphContent);
-    expect(graph.schemaVersion).toBe('2.1.0');
+    expect(graph.schemaVersion).toBe('2.2.0');
     expect(graph.nodes).toBeDefined();
   });
 });

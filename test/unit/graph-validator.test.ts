@@ -3,7 +3,7 @@ import { validateGraph, assertValidGraph } from '../../src/engines/graph-validat
 
 function validGraph() {
   return {
-    schemaVersion: '2.1.0',
+    schemaVersion: '2.2.0',
     nodes: {
       'src/a.ts': {
         file: 'src/a.ts',
@@ -70,12 +70,12 @@ describe('Graph Validator', () => {
   });
 
   it('flags nodes that are not an object', () => {
-    const g = { schemaVersion: '2.1.0', nodes: 'not-an-object' };
+    const g = { schemaVersion: '2.2.0', nodes: 'not-an-object' };
     expect(validateGraph(g).some((e) => e.includes("'nodes' must be an object"))).toBe(true);
   });
 
   it('assertValidGraph throws on invalid input', () => {
-    expect(() => assertValidGraph({ schemaVersion: '2.1.0', nodes: 'bad' })).toThrow(/validation error/);
+    expect(() => assertValidGraph({ schemaVersion: '2.2.0', nodes: 'bad' })).toThrow(/validation error/);
   });
 
   it('assertValidGraph passes on a valid graph', () => {
