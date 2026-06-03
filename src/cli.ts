@@ -401,14 +401,16 @@ function setupProgram(): Command {
   // install command
   program
     .command('install')
-    .description('Install VibeGuard skill into your AI coding assistant')
+    .description('Install VibeGuard into your AI assistant — one shot: integration + config + Caveman + graph')
     .option('--platform <name>', 'Platform: kiro (default)', 'kiro')
-    .option('--caveman [level]', 'Also enable Caveman Mode (optional level: lite|full|ultra)')
+    .option('--caveman [level]', 'Enable Caveman Mode (on by default; optional level: lite|full|ultra)')
+    .option('--no-caveman', 'Skip enabling Caveman Mode')
+    .option('--no-map', 'Skip building the dependency graph during install')
     .action(async (cmdOpts) => {
       const globalOpts = program.opts() as GlobalOptions;
       const ctx = await createContext(globalOpts, 'install');
       const { runInstall } = await import('./commands/install.js');
-      await runInstall(ctx, { platform: cmdOpts.platform, caveman: cmdOpts.caveman });
+      await runInstall(ctx, { platform: cmdOpts.platform, caveman: cmdOpts.caveman, map: cmdOpts.map });
     });
 
   // uninstall command

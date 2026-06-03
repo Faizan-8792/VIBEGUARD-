@@ -1,6 +1,6 @@
 import { Project, SourceFile, SyntaxKind } from 'ts-morph';
 import { resolve, relative, dirname } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { hashFile } from '../utils/hash-utils.js';
 import { FileStoreImpl } from '../storage/file-store.js';
 import {
@@ -73,6 +73,31 @@ export interface GraphBuildResult {
 }
 
 export const GRAPH_SCHEMA_VERSION = '2.2.0';
+
+/**
+ * Hard cap on the byte size of a single file the graph builder will parse.
+ * Minified bundles, vendored libraries, and generated artifacts can be many
+ * megabytes on a single line — feeding those to ts-morph balloons memory and
+ * crashes the process ("JavaScript heap out of memory"). Skipping them keeps
+ * the build bounded; they are almost never meaningful graph nodes anyway.
+ */
+const MAX_PARSE_FILE_BYTES = 1.5 * 1024 * 1024; // 1.5 MB
+
+/**
+ * Decide whether a file is safe to parse. Returns a reason string when the file
+ * should be skipped (too large or minified), or null when it is fine to parse.
+ */
+async function tooBigToParse(absPath: string): Promise<string | null> {
+  try {
+    const { size } = await stat(absPath);
+    if (size > MAX_PARSE_FILE_BYTES) {
+      return `skipped: file is ${(size / (1024 * 1024)).toFixed(1)}MB (limit ${(MAX_PARSE_FILE_BYTES / (1024 * 1024)).toFixed(1)}MB)`;
+    }
+  } catch {
+    return 'skipped: cannot stat file';
+  }
+  return null;
+}
 
 export async function buildGraph(
   projectRoot: string,
@@ -153,7 +178,14 @@ export async function buildGraph(
 
   // Add TS/JS files to parse
   const absoluteTsFiles = tsFiles.map((f) => resolve(projectRoot, f));
+  const oversizedSkips: string[] = [];
   for (const absFile of absoluteTsFiles) {
+    const skipReason = await tooBigToParse(absFile);
+    if (skipReason) {
+      oversizedSkips.push(relative(projectRoot, absFile).replace(/\\/g, '/'));
+      logger.debug(`${relative(projectRoot, absFile).replace(/\\/g, '/')}: ${skipReason}`);
+      continue;
+    }
     try {
       project.addSourceFileAtPath(absFile);
     } catch {
@@ -206,7 +238,14 @@ export async function buildGraph(
   const allFileSet = new Set(files);
   for (const file of polyglotFiles) {
     try {
-      const content = await readFile(resolve(projectRoot, file), 'utf-8');
+      const absPolyglot = resolve(projectRoot, file);
+      const skipReason = await tooBigToParse(absPolyglot);
+      if (skipReason) {
+        oversizedSkips.push(file);
+        logger.debug(`${file}: ${skipReason}`);
+        continue;
+      }
+      const content = await readFile(absPolyglot, 'utf-8');
       const parsed = parseFile(file, content);
       parsedPolyglotByFile.set(file, parsed);
 

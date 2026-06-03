@@ -209,11 +209,15 @@ async function removeMcpConfig(
   return { removed: true, path: normalizedPath };
 }
 
-export async function runInstall(ctx: CommandContext, opts: { platform: string; caveman?: string | boolean }): Promise<void> {
+export async function runInstall(
+  ctx: CommandContext,
+  opts: { platform: string; caveman?: string | boolean; map?: boolean },
+): Promise<void> {
   const { projectRoot } = ctx;
   const platform = normalizePlatform(opts.platform);
+  const jsonMode = ctx.options.json;
 
-  await withSuppressedStdout(ctx.options.json, async () => {
+  await withSuppressedStdout(jsonMode, async () => {
     switch (platform) {
       case 'kiro':
         await installKiro(projectRoot);
@@ -245,10 +249,22 @@ export async function runInstall(ctx: CommandContext, opts: { platform: string; 
     }
   });
 
-  // Optionally enable Caveman Mode in the same step, so one command gives the
-  // user both the integration and token-saving output compression.
+  // ── One-shot setup: from here, a single `install` leaves the project fully
+  // ready — config initialized, Caveman Mode on, and the dependency graph
+  // built — regardless of which IDE was targeted. Each step is non-fatal so a
+  // failure in one (e.g. graph build on a huge repo) never blocks the others.
+
+  // 1) Ensure `.vibeguard/config.json` exists (every platform, not just Kiro).
+  const configCreated = await ensureVibeguardConfig(projectRoot);
+  if (configCreated && !jsonMode) {
+    process.stdout.write(
+      `  ${statusIcon('success')} ${brand.success('Created')} ${brand.muted('.vibeguard/config.json')}\n`,
+    );
+  }
+
+  // 2) Enable Caveman Mode by default (opt out with `--no-caveman`).
   let cavemanEnabled: { level: CavemanLevel; written: string[] } | null = null;
-  if (opts.caveman !== undefined && opts.caveman !== false) {
+  if (opts.caveman !== false) {
     const { enableCaveman, isCavemanLevel, DEFAULT_CAVEMAN_LEVEL } = await import('../engines/caveman.js');
     const requested = typeof opts.caveman === 'string' ? opts.caveman : undefined;
     if (requested !== undefined && !isCavemanLevel(requested)) {
@@ -260,16 +276,92 @@ export async function runInstall(ctx: CommandContext, opts: { platform: string; 
     const level = (requested ?? DEFAULT_CAVEMAN_LEVEL) as CavemanLevel;
     const { written } = await enableCaveman(projectRoot, level);
     cavemanEnabled = { level, written };
-    if (!ctx.options.json) {
+    if (!jsonMode) {
       process.stdout.write(
-        `  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')} ${brand.muted(`(level: ${level})`)}\n\n`,
+        `  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')} ${brand.muted(`(level: ${level})`)}\n`,
       );
     }
   }
 
-  if (ctx.options.json) {
-    emitJson({ action: 'install', platform, installed: true, caveman: cavemanEnabled });
+  // 3) Build the dependency graph so the agent has a map immediately (opt out
+  //    with `--no-map`). Non-fatal: a build failure must not fail the install.
+  let mapBuilt: { nodes: number; edges: number } | null = null;
+  let mapError: string | null = null;
+  if (opts.map !== false) {
+    try {
+      mapBuilt = await buildInstallGraph(ctx);
+      if (mapBuilt && !jsonMode) {
+        process.stdout.write(
+          `  ${statusIcon('success')} ${brand.success('Dependency graph built')} ` +
+            `${brand.muted(`(${mapBuilt.nodes} files, ${mapBuilt.edges} edges)`)}\n`,
+        );
+      }
+    } catch (err) {
+      mapError = err instanceof Error ? err.message : String(err);
+      if (!jsonMode) {
+        process.stdout.write(
+          `  ${statusIcon('warning')} ${brand.muted(`Skipped graph build: ${mapError}. Run \`vibeguard map\` later.`)}\n`,
+        );
+      }
+    }
   }
+
+  if (!jsonMode) process.stdout.write('\n');
+
+  if (jsonMode) {
+    emitJson({
+      action: 'install',
+      platform,
+      installed: true,
+      configCreated,
+      caveman: cavemanEnabled,
+      map: mapBuilt,
+      mapError,
+    });
+  }
+}
+
+/**
+ * Ensure `.vibeguard/config.json` exists, creating it from defaults when absent.
+ * Returns true when a new config was written, false when one already existed.
+ * Shared by every platform so a single `install` always leaves a valid config.
+ */
+async function ensureVibeguardConfig(projectRoot: string): Promise<boolean> {
+  const configPath = join(projectRoot, '.vibeguard', 'config.json');
+  try {
+    await access(configPath);
+    return false;
+  } catch {
+    // doesn't exist — create it.
+  }
+
+  const { runInit } = await import('./init.js');
+  const { loadConfig } = await import('../storage/config-store.js');
+  const { createLogger } = await import('../utils/logger.js');
+  const config = await loadConfig(projectRoot);
+  const logger = createLogger({ jsonMode: false, quiet: true, verbose: false, command: 'install' });
+  const initCtx = {
+    options: { json: false, cwd: projectRoot, include: [], exclude: [], config: undefined, verbose: false, quiet: true },
+    config,
+    logger,
+    projectRoot,
+  };
+  await runInit(initCtx, { force: false });
+  return true;
+}
+
+/**
+ * Build (or incrementally refresh) the dependency graph as part of install, so
+ * the agent has a usable map without a separate `vibeguard map` step. Reuses the
+ * resolved config from the command context and runs quietly.
+ */
+async function buildInstallGraph(ctx: CommandContext): Promise<{ nodes: number; edges: number }> {
+  const { projectRoot, config, logger } = ctx;
+  const { resolveFiles } = await import('../utils/glob-resolver.js');
+  const { buildGraph } = await import('../engines/graph-builder.js');
+  const files = await resolveFiles(projectRoot, config.effectiveInclude, config.effectiveSkipSet);
+  const result = await buildGraph(projectRoot, files, config, logger);
+  return { nodes: result.summary.nodes, edges: result.summary.edges };
 }
 
 async function installKiro(projectRoot: string): Promise<void> {

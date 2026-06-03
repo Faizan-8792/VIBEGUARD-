@@ -282,14 +282,43 @@ vibeguard caveman off         # back to normal prose
 
 ## 🤝 Editor & Agent Setup
 
+**One command does the whole setup.** Pick your IDE below, run its install command, and VibeGuard
+wires everything in a single pass — the editor integration file (rules / instructions / MCP config),
+`.vibeguard/config.json`, **Caveman Mode**, and a freshly built **dependency graph**. No follow-up steps.
+
+| Editor / Agent | One-shot install command | What it sets up |
+| --- | --- | --- |
+| **Antigravity** | `npx vibeguard antigravity install` | `AGENTS.md` rules + `.antigravity/mcp.json` MCP server |
+| **VS Code** | `npx vibeguard vscode install` | `.github/copilot-instructions.md` + `.vscode/mcp.json` MCP server |
+| **Kiro** | `npx vibeguard kiro install` | `.kiro/skills/vibeguard/` skill + steering + `.kiro/settings/mcp.json` |
+| **Cursor** | `npx vibeguard cursor install` | `.cursor/rules/vibeguard.mdc` always-on rule |
+| **Claude Code** | `npx vibeguard claude install` | `CLAUDE.md` integration section |
+| **GitHub Copilot** | `npx vibeguard copilot install` | `.github/copilot-instructions.md` |
+| **Gemini** | `npx vibeguard gemini install` | `.gemini/CONTEXT.md` + `.gemini/settings.json` |
+| **Aider** | `npx vibeguard aider install` | `.aider.context.md` (+ `.aider.conf.yml` if absent) |
+
+Every command above runs the **same one-time setup** after writing its integration file:
+
+1. ✅ Creates `.vibeguard/config.json` (if missing)
+2. 🪨 Enables **Caveman Mode** (terse, token-saving replies)
+3. 🗺️ Builds the **dependency graph** so the agent has a map immediately
+
 ```bash
-vibeguard install --platform kiro     # also: cursor, claude, copilot, vscode, codex, gemini, aider
-vibeguard vscode install              # shortcut form
-vibeguard codex install               # writes AGENTS.md (covers Codex + AGENTS.md agents)
+# Generic form (any platform)
+npx vibeguard install --platform <kiro|cursor|claude|copilot|vscode|codex|gemini|aider|antigravity>
+
+# Opt out of a step if you want a lean install
+npx vibeguard kiro install                 # full one-shot setup (recommended)
+npx vibeguard install --platform vscode --no-caveman   # skip Caveman Mode
+npx vibeguard install --platform vscode --no-map       # skip graph build
+npx vibeguard install --platform kiro --caveman ultra  # pick a Caveman level
 ```
 
-Each writes the right integration file for that tool (rules / instructions / MCP config) and
-teaches the agent to go graph-first. Use `uninstall` to cleanly remove generated files.
+Use `uninstall` (e.g. `npx vibeguard vscode uninstall`) to cleanly remove generated files and
+Caveman rules. Your `.vibeguard/` data is always preserved.
+
+> **Note:** if a repo is very large, the graph build during install is best-effort — if it can't
+> finish it's skipped with a hint to run `vibeguard map` later, and the rest of the setup still completes.
 
 ---
 

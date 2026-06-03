@@ -52,9 +52,17 @@ afterEach(async () => {
 describe('Integration: install --caveman enables Caveman in one step', () => {
   const steeringRel = join('.kiro', 'steering', 'vibeguard-caveman.md');
 
-  it('install with no --caveman does NOT enable caveman', async () => {
+  it('install enables Caveman by default (one-shot setup)', async () => {
     const ctx = await makeCtx(projectRoot, 'install');
-    await captureStdout(() => runInstall(ctx, { platform: 'kiro' }));
+    await captureStdout(() => runInstall(ctx, { platform: 'kiro', map: false }));
+    const state = await loadCavemanState(projectRoot);
+    expect(state.enabled).toBe(true);
+    expect(await exists(join(projectRoot, steeringRel))).toBe(true);
+  });
+
+  it('install --no-caveman (caveman: false) skips enabling caveman', async () => {
+    const ctx = await makeCtx(projectRoot, 'install');
+    await captureStdout(() => runInstall(ctx, { platform: 'kiro', caveman: false, map: false }));
     const state = await loadCavemanState(projectRoot);
     expect(state.enabled).toBe(false);
     expect(await exists(join(projectRoot, steeringRel))).toBe(false);
