@@ -31,12 +31,27 @@ async function copyToClipboard(text: string, label?: string): Promise<void> {
   }
 }
 
-export async function runInteractive(ctx: CommandContext): Promise<void> {
-  process.stdout.write('\n');
-  process.stdout.write(banner());
-  process.stdout.write('\n');
+/**
+ * Clear the terminal and move the cursor to the top-left so the next render
+ * starts at the top of the viewport. This keeps the interactive menu and its
+ * output anchored at the top instead of scrolling down the screen. No-ops when
+ * stdout is not a TTY (piped/redirected) so captured output stays clean.
+ */
+function clearScreen(): void {
+  if (!process.stdout.isTTY) return;
+  // \x1b[2J clears the screen, \x1b[3J clears scrollback, \x1b[H homes cursor.
+  process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+}
 
+export async function runInteractive(ctx: CommandContext): Promise<void> {
   while (true) {
+    // Re-anchor the view at the top of the terminal on every cycle so output
+    // never drifts down the screen and the menu is always in the same place.
+    clearScreen();
+    process.stdout.write('\n');
+    process.stdout.write(banner());
+    process.stdout.write('\n');
+
     const action = await select<string>({
       message: brand.primary.bold('What would you like to do?'),
       choices: [
@@ -107,6 +122,25 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
     }
 
     process.stdout.write('\n');
+
+    // Pause so the action's output stays readable at the top of the screen
+    // before the next cycle clears and re-anchors the view.
+    await pauseForReturn();
+  }
+}
+
+/**
+ * Wait for the user to press Enter before continuing. Lets the current result
+ * stay on screen (top-anchored) until the user is ready for the next menu
+ * cycle. No-ops on non-TTY stdin so piped/automated runs don't hang.
+ */
+async function pauseForReturn(): Promise<void> {
+  if (!process.stdout.isTTY || !process.stdin.isTTY) return;
+  const { input } = await import('@inquirer/prompts');
+  try {
+    await input({ message: brand.muted('Press Enter to return to the menu…') });
+  } catch {
+    // Ctrl-C / closed prompt — fall through to the loop, which handles exit.
   }
 }
 
@@ -164,6 +198,7 @@ async function runSecurityInteractive(ctx: CommandContext): Promise<void> {
     choices: [
       { name: 'Fix Now — Auto-fix .gitignore issues', value: 'fix-gitignore' },
       { name: 'Fix Now — Move secrets to .env', value: 'fix-env' },
+      { name: 'Ignore a finding — Stop flagging a false positive', value: 'ignore' },
       { name: 'Copy Fix Instructions (for AI chat)', value: 'copy-instructions' },
       { name: 'Back to menu', value: 'back' },
     ],
@@ -173,8 +208,39 @@ async function runSecurityInteractive(ctx: CommandContext): Promise<void> {
     const { runSecurity } = await import('./security.js');
     const fixType = action === 'fix-gitignore' ? 'gitignore' : 'env';
     await runSecurity(ctx, { fix: fixType, dryRun: false, gitSafe: false, force: false });
+  } else if (action === 'ignore') {
+    await ignoreFindingInteractive(ctx, result.issues);
   } else if (action === 'copy-instructions') {
     await copyFixInstructionsToClipboard(result.issues);
+  }
+}
+
+/**
+ * Interactive false-positive suppression: let the user pick a finding from the
+ * current scan and add its ID to `security.ignore` so future scans skip it.
+ */
+async function ignoreFindingInteractive(ctx: CommandContext, issues: SecurityIssue[]): Promise<void> {
+  const { addIgnoredFindings } = await import('../storage/config-store.js');
+
+  const choices = issues.slice(0, 25).map((i) => ({
+    name: `${i.id}  ${i.file}:${i.line} — ${i.message}`,
+    value: i.id,
+  }));
+  choices.push({ name: brand.muted('↩   Back'), value: '__back__' });
+
+  const id = await select<string>({
+    message: brand.primary('Which finding should VibeGuard stop flagging?'),
+    choices,
+  });
+
+  if (id === '__back__') return;
+
+  const added = await addIgnoredFindings(ctx.projectRoot, [id]);
+  if (added.length > 0) {
+    process.stdout.write(`\n  ${statusIcon('success')} ${brand.success(`Ignoring ${id}.`)} ${brand.muted('It will not be flagged again.')}\n`);
+    process.stdout.write(`  ${brand.muted('Undo with:')} ${brand.secondary('vibeguard ignore remove ' + id)}\n`);
+  } else {
+    process.stdout.write(`\n  ${statusIcon('info')} ${brand.muted(`${id} was already ignored.`)}\n`);
   }
 }
 
@@ -382,12 +448,24 @@ async function runAuditInteractive(ctx: CommandContext): Promise<void> {
 }
 
 async function runMapInteractive(ctx: CommandContext): Promise<void> {
-  const { buildGraph } = await import('../engines/graph-builder.js');
+  const { buildGraph, GRAPH_SCHEMA_VERSION } = await import('../engines/graph-builder.js');
   const { resolveFiles } = await import('../utils/glob-resolver.js');
+  const { generateHTMLGraph } = await import('../engines/html-graph-generator.js');
+  const { generateGraphReport } = await import('../engines/graph-report-generator.js');
 
   ctx.logger.startSpinner('Building dependency graph...');
   const files = await resolveFiles(ctx.projectRoot, ctx.config.effectiveInclude, ctx.config.effectiveSkipSet);
   const result = await buildGraph(ctx.projectRoot, files, ctx.config, ctx.logger);
+  ctx.logger.stopSpinner(true);
+
+  // Also produce the interactive HTML + architecture report, so choosing "map"
+  // from the menu yields the full graph.html (not just graph.json).
+  const graphData = { schemaVersion: GRAPH_SCHEMA_VERSION, nodes: Object.fromEntries(result.nodes) };
+  ctx.logger.startSpinner('Generating report & visualization...');
+  await Promise.all([
+    generateHTMLGraph(ctx.projectRoot, graphData),
+    generateGraphReport(ctx.projectRoot, graphData),
+  ]);
   ctx.logger.stopSpinner(true);
 
   const output: string[] = [];
@@ -404,7 +482,12 @@ async function runMapInteractive(ctx: CommandContext): Promise<void> {
     output.push(keyValue('Removed', brand.danger(`-${result.summary.removed.length}`)));
   }
   output.push('');
-  output.push(`  ${statusIcon('success')} ${brand.success('Graph saved to')} ${brand.muted('.vibeguard/graph.json')}`);
+  output.push(`  ${statusIcon('success')} ${brand.success('Generated:')}`);
+  output.push(`    ${brand.muted('•')} ${brand.secondary('.vibeguard/graph.json')}       ${brand.muted('Dependency data')}`);
+  output.push(`    ${brand.muted('•')} ${brand.secondary('.vibeguard/graph.html')}       ${brand.muted('Interactive visualization')}`);
+  output.push(`    ${brand.muted('•')} ${brand.secondary('.vibeguard/GRAPH_REPORT.md')}  ${brand.muted('Architecture report')}`);
+  output.push('');
+  output.push(`  ${brand.muted('Open the interactive graph:')} ${brand.secondary('vibeguard graph')}`);
 
   process.stdout.write(output.join('\n') + '\n');
 }
@@ -582,6 +665,11 @@ async function runInitInteractive(ctx: CommandContext): Promise<void> {
       throw err;
     }
   }
+
+  // Build the dependency graph + interactive HTML right after init so the
+  // project is immediately usable (graph.json, graph.html, GRAPH_REPORT.md).
+  process.stdout.write('\n');
+  await runMapInteractive(ctx);
 }
 
 async function copyFixInstructionsToClipboard(issues: SecurityIssue[]): Promise<void> {

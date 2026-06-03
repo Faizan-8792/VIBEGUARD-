@@ -66,6 +66,7 @@ describe('CLI Shell', () => {
       'attack',
       'config',
       'hook',
+      'ignore',
       'query',
       'path',
       'explain',

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { VibeguardError, ErrorCodes } from '../utils/errors.js';
+import { FileStoreImpl } from './file-store.js';
 
 export interface TagRule {
   match: string;
@@ -23,7 +24,11 @@ export interface VibeguardConfig {
   ignore: string[];
   tags: { customRules: TagRule[] };
   importance: { weights: ImportanceWeights };
-  security: { customSecretPatterns: string[] };
+  security: {
+    customSecretPatterns: string[];
+    /** Finding IDs (e.g. "SEC-006-1a2b3c4d", "ATK-104-…") to suppress on future scans. */
+    ignore: string[];
+  };
   context: {
     defaultRadius: number;
     defaultTokenBudget: number;
@@ -93,7 +98,7 @@ export const DEFAULT_CONFIG: VibeguardConfig = {
   importance: {
     weights: { dependents: 5, imports: 2, git: 3, route: 4 },
   },
-  security: { customSecretPatterns: [] },
+  security: { customSecretPatterns: [], ignore: [] },
   context: {
     defaultRadius: 2,
     defaultTokenBudget: 12000,
@@ -166,6 +171,8 @@ function validateConfig(data: unknown): VibeguardConfig {
     security: {
       customSecretPatterns:
         ((obj.security as Record<string, unknown>)?.customSecretPatterns as string[]) ?? DEFAULT_CONFIG.security.customSecretPatterns,
+      ignore:
+        ((obj.security as Record<string, unknown>)?.ignore as string[]) ?? DEFAULT_CONFIG.security.ignore,
     },
     context: {
       defaultRadius: ((obj.context as Record<string, unknown>)?.defaultRadius as number) ?? DEFAULT_CONFIG.context.defaultRadius,
@@ -216,4 +223,77 @@ export async function loadConfig(
     effectiveSkipSet,
     effectiveInclude,
   };
+}
+
+/**
+ * Add one or more finding IDs to `security.ignore` in `.vibeguard/config.json`,
+ * creating the config from defaults if it does not yet exist. Existing user
+ * settings are preserved; ignore IDs are de-duplicated. Returns the IDs that
+ * were newly added (already-ignored IDs are skipped).
+ */
+export async function addIgnoredFindings(projectRoot: string, ids: string[]): Promise<string[]> {
+  const filePath = join(projectRoot, '.vibeguard', 'config.json');
+
+  let raw: Record<string, unknown> = {};
+  try {
+    raw = JSON.parse(await readFile(filePath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    // No config yet — start from defaults so the file is valid and complete.
+    raw = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  }
+
+  const security = (typeof raw.security === 'object' && raw.security !== null)
+    ? (raw.security as Record<string, unknown>)
+    : {};
+  const current = Array.isArray(security.ignore) ? (security.ignore as string[]) : [];
+  const currentSet = new Set(current);
+
+  const added: string[] = [];
+  for (const id of ids) {
+    if (!currentSet.has(id)) {
+      currentSet.add(id);
+      added.push(id);
+    }
+  }
+
+  if (added.length === 0) return [];
+
+  security.ignore = [...currentSet];
+  if (!Array.isArray(security.customSecretPatterns)) {
+    security.customSecretPatterns = DEFAULT_CONFIG.security.customSecretPatterns;
+  }
+  raw.security = security;
+
+  const store = new FileStoreImpl(projectRoot);
+  await store.write('config.json', raw);
+  return added;
+}
+
+/** Remove finding IDs from `security.ignore`. Returns the IDs actually removed. */
+export async function removeIgnoredFindings(projectRoot: string, ids: string[]): Promise<string[]> {
+  const filePath = join(projectRoot, '.vibeguard', 'config.json');
+
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(await readFile(filePath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  const security = (typeof raw.security === 'object' && raw.security !== null)
+    ? (raw.security as Record<string, unknown>)
+    : {};
+  const current = Array.isArray(security.ignore) ? (security.ignore as string[]) : [];
+  if (current.length === 0) return [];
+
+  const removeSet = new Set(ids);
+  const removed = current.filter((id) => removeSet.has(id));
+  if (removed.length === 0) return [];
+
+  security.ignore = current.filter((id) => !removeSet.has(id));
+  raw.security = security;
+
+  const store = new FileStoreImpl(projectRoot);
+  await store.write('config.json', raw);
+  return removed;
 }

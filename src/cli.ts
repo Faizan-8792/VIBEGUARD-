@@ -150,12 +150,25 @@ function setupProgram(): Command {
   // init command
   program
     .command('init')
-    .description('Initialize .vibeguard/ configuration')
+    .description('Initialize .vibeguard/ configuration and build the dependency graph')
     .option('--force', 'Overwrite existing configuration', false)
+    .option('--no-map', 'Skip building the dependency graph after init')
     .action(async (cmdOpts) => {
       const globalOpts = program.opts() as GlobalOptions;
       const initCtx = await createContext(globalOpts, 'init');
       await runInit(initCtx, { force: cmdOpts.force });
+
+      // Build the graph + interactive HTML right after init so the project is
+      // immediately usable. Skipped in --json mode (keeps output a single JSON
+      // document) and with --no-map. Non-fatal: a build failure never fails init.
+      if (cmdOpts.map !== false && !globalOpts.json) {
+        try {
+          const { runMap } = await import('./commands/map.js');
+          await runMap(initCtx);
+        } catch (err) {
+          initCtx.logger.warn(`Skipped graph build: ${err instanceof Error ? err.message : String(err)}. Run \`vibeguard map\` later.`);
+        }
+      }
     });
 
   // map command
@@ -474,6 +487,19 @@ function setupProgram(): Command {
       const ctx = await createContext(globalOpts, 'hook');
       const { runHook } = await import('./commands/hook.js');
       await runHook(ctx, { action });
+    });
+
+  // ignore command — suppress specific security/attack findings by ID
+  program
+    .command('ignore')
+    .description('Ignore specific findings by ID so scans stop flagging them (action: add|remove|list)')
+    .argument('[action]', 'Action: add <id...>, remove <id...>, list', 'list')
+    .argument('[ids...]', 'Finding IDs (e.g. SEC-006-1a2b3c4d, ATK-104-…)')
+    .action(async (action, ids) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'ignore');
+      const { runIgnore } = await import('./commands/ignore.js');
+      await runIgnore(ctx, { action, ids: ids ?? [] });
     });
 
   // query command — graph-powered Q&A (Graphify-like token reduction)

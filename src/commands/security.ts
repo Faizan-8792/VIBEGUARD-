@@ -115,6 +115,9 @@ export async function runSecurity(ctx: CommandContext, opts: SecurityCommandOpti
     }
 
     output.push(`  ${brand.muted('Run with --fix=gitignore or --fix=env to auto-fix')}`);
+    if (result.issues.length > 0) {
+      output.push(`  ${brand.muted('False positive? Ignore one with')} ${brand.info('vibeguard ignore add <ID>')} ${brand.muted('(IDs shown above)')}`);
+    }
     output.push('');
     process.stdout.write(output.join('\n') + '\n');
   }

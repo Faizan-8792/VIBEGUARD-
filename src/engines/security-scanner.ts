@@ -338,12 +338,16 @@ export async function scanSecurity(
     }
   }
 
+  // Suppress any findings the user has explicitly ignored (by exact ID).
+  const ignoreSet = new Set(config.security.ignore ?? []);
+  const visibleIssues = ignoreSet.size > 0 ? issues.filter((i) => !ignoreSet.has(i.id)) : issues;
+
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  for (const issue of issues) {
+  for (const issue of visibleIssues) {
     counts[issue.severity]++;
   }
 
-  return { issues, counts };
+  return { issues: visibleIssues, counts };
 }
 
 /**

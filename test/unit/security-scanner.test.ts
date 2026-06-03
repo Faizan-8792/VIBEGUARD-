@@ -306,6 +306,30 @@ describe('Security Scanner', () => {
     expect(result.issues.some((i) => i.id.startsWith('SEC-017-'))).toBe(false);
   });
 
+  // ─── Per-finding ignore list ────────────────────────────────────────────
+
+  it('suppresses a finding whose ID is in security.ignore', async () => {
+    await writeFile(
+      join(testDir, 'src', 'ig.ts'),
+      `const key = "sk-abcdefghijklmnopqrstuvwxyz1234567890";`,
+      'utf-8'
+    );
+
+    // First scan: discover the finding's ID.
+    let config = await loadConfig(testDir);
+    const first = await scanSecurity(testDir, ['src/ig.ts'], config);
+    expect(first.issues.length).toBeGreaterThan(0);
+    const ignoredId = first.issues[0].id;
+
+    // Persist it to the ignore list, then re-scan — it must be gone.
+    const { addIgnoredFindings } = await import('../../src/storage/config-store.js');
+    await addIgnoredFindings(testDir, [ignoredId]);
+
+    config = await loadConfig(testDir);
+    const second = await scanSecurity(testDir, ['src/ig.ts'], config);
+    expect(second.issues.some((i) => i.id === ignoredId)).toBe(false);
+  });
+
   it('DOES flag a database URL with embedded credentials', async () => {
     await writeFile(
       join(testDir, 'src', 'dbcreds.ts'),

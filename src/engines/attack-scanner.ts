@@ -520,9 +520,10 @@ function isNonExecutableLine(line: string): boolean {
 export async function scanAttacks(
   projectRoot: string,
   files: string[],
-  _config: ResolvedConfig,
+  config: ResolvedConfig,
 ): Promise<AttackScanResult> {
   const findings: AttackFinding[] = [];
+  const ignoreSet = new Set(config.security?.ignore ?? []);
 
   for (const file of files) {
     if (file.match(/\.(test|spec)\./)) continue;
@@ -561,9 +562,16 @@ export async function scanAttacks(
         }
 
         const contentHash = hashString(`${file}:${detector.detectorCode}:${lineNumber}`).substring(0, 8);
+        const findingId = `ATK-${detector.detectorCode}-${contentHash}`;
+
+        // Skip findings the user has explicitly ignored.
+        if (ignoreSet.has(findingId)) {
+          if (!regex.global) break;
+          continue;
+        }
 
         findings.push({
-          id: `ATK-${detector.detectorCode}-${contentHash}`,
+          id: findingId,
           category: detector.category,
           attackType: detector.attackType,
           severity: detector.severity,
