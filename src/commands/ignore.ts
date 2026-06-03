@@ -15,7 +15,7 @@ export interface IgnoreOptions {
  * and suppressed by the security + attack scanners on every future run.
  */
 export async function runIgnore(ctx: CommandContext, opts: IgnoreOptions): Promise<void> {
-  const { projectRoot, config, options } = ctx;
+  const { config, options } = ctx;
 
   switch (opts.action) {
     case 'add':
@@ -33,9 +33,6 @@ export async function runIgnore(ctx: CommandContext, opts: IgnoreOptions): Promi
         `Unknown ignore action: "${opts.action}". Valid: add <id...>, remove <id...>, list`,
       );
   }
-
-  // Silence unused-var lint when action handlers don't use projectRoot directly.
-  void projectRoot;
 }
 
 async function addAction(ctx: CommandContext, ids: string[]): Promise<void> {
