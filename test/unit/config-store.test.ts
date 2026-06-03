@@ -63,7 +63,7 @@ describe('Config Store', () => {
     const config = await loadConfig(testDir, undefined, ['src/**/*.ts'], ['vendor/**']);
     expect(config.effectiveInclude).toEqual(['src/**/*.ts']);
     expect(config.effectiveSkipSet).toContain('vendor/**');
-    expect(config.effectiveSkipSet).toContain('node_modules/**');
+    expect(config.effectiveSkipSet).toContain('**/node_modules/**');
   });
 
   it('uses default extensions when no include specified', async () => {

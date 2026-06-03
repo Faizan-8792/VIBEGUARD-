@@ -37,7 +37,7 @@ describe('Init Command', () => {
     const content = await readFile(configPath, 'utf-8');
     const written = JSON.parse(content);
 
-    expect(written.ignore).toContain('node_modules/**');
+    expect(written.ignore).toContain('**/node_modules/**');
     expect(written.importance.weights.dependents).toBe(5);
     expect(written.context.defaultRadius).toBe(2);
     expect(written.context.defaultTokenBudget).toBe(12000);

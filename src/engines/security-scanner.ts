@@ -32,6 +32,77 @@ interface DetectorPattern {
   severity: Severity;
   message: string;
   suggestedFix?: string;
+  /**
+   * Optional value-level validator. Runs on the exact matched substring after a
+   * regex hit; returning false discards the match. Used to enforce real
+   * key formats / entropy so structurally-correct-but-fake strings (docs,
+   * placeholders, data tables) don't produce false positives.
+   */
+  validate?: (matchedValue: string, line: string) => boolean;
+}
+
+// ─── Value-validation helpers ────────────────────────────────────────────────
+
+/** Shannon entropy in bits/char — random secrets score high, placeholders low. */
+function shannonEntropy(value: string): number {
+  if (value.length === 0) return 0;
+  const freq = new Map<string, number>();
+  for (const ch of value) freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of freq.values()) {
+    const p = count / value.length;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+/**
+ * True when a value is an obvious placeholder rather than a real secret:
+ * repeated chars ("XXXXXXXX"), env-var references, angle-bracket templates,
+ * or words like example/placeholder/your_key. Note: well-known vendor "EXAMPLE"
+ * doc keys are intentionally NOT excluded here because format-strict detectors
+ * (e.g. AWS) do not run this entropy check — they stay format-validated.
+ */
+function looksLikePlaceholder(rawValue: string): boolean {
+  const value = rawValue.replace(/^['"`]|['"`]$/g, '').trim();
+  if (value.length === 0) return true;
+  if (/^(.)\1{6,}$/.test(value)) return true; // e.g. "aaaaaaaa", "00000000"
+  if (/^\$\{[^}]+\}$/.test(value)) return true; // ${ENV_VAR}
+  if (/^<[^>]+>$/.test(value)) return true; // <your-key-here>
+  if (/^process\.env\./.test(value)) return true;
+  if (/\b(?:placeholder|example|changeme|your[_-]?(?:api|key|token|secret|password)|dummy|sample|redacted|insert[_-]?your|xxxx+|todo)\b/i.test(value)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True for minified / generated / single-line-bundle content: a very long line
+ * with almost no whitespace (e.g. webpack bundles, embedded data tables). Such
+ * lines are full of high-entropy substrings that masquerade as secrets, so all
+ * detectors skip them. This is line-scoped so normal source is never affected.
+ */
+function isLikelyMinifiedLine(line: string): boolean {
+  if (line.length < 400) return false;
+  const whitespace = (line.match(/\s/g) ?? []).length;
+  return whitespace / line.length < 0.02;
+}
+
+/**
+ * Defense-in-depth: skip vendored / generated files even if a caller passes
+ * them in (the default ignore globs already exclude these, but engines are
+ * called directly from the MCP server and tests too).
+ */
+function isVendoredOrGenerated(file: string): boolean {
+  const f = file.replace(/\\/g, '/');
+  return (
+    /(?:^|\/)node_modules\//.test(f) ||
+    /(?:^|\/)(?:dist|build|out|coverage|vendor|third[_-]?party)\//.test(f) ||
+    /\.min\.(?:js|css)$/.test(f) ||
+    /\.bundle\.js$/.test(f) ||
+    /\.map$/.test(f) ||
+    /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(f)
+  );
 }
 
 const BUILT_IN_PATTERNS: DetectorPattern[] = [
@@ -79,6 +150,7 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
     severity: 'high',
     message: 'Hard-coded JWT secret detected',
     suggestedFix: 'Move to environment variable: process.env.JWT_SECRET',
+    validate: (value) => !looksLikePlaceholder(value),
   },
   {
     name: 'Database Connection URL',
@@ -106,6 +178,8 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
     severity: 'critical',
     message: 'Hard-coded Google API/Gemini key detected',
     suggestedFix: 'Move to environment variable: process.env.GOOGLE_API_KEY',
+    // Real Google keys are high-entropy; reject repeated/placeholder bodies.
+    validate: (value) => !looksLikePlaceholder(value) && shannonEntropy(value.slice(4)) >= 3.0,
   },
   {
     name: 'GitHub Token',
@@ -137,16 +211,30 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
   {
     name: 'Twilio Account SID',
     detectorCode: '016',
-    regex: /AC[0-9a-fA-F]{32}/g,
+    // Bounded so it can't be a 34-char slice of a longer hex blob/data table,
+    // and not preceded by another hex digit (avoids matching inside hashes).
+    regex: /(?<![0-9a-fA-F])AC[0-9a-fA-F]{32}(?![0-9a-fA-F])/g,
     category: 'hard-coded-secret',
     severity: 'high',
     message: 'Hard-coded Twilio Account SID detected',
     suggestedFix: 'Move to environment variable: process.env.TWILIO_ACCOUNT_SID',
+    // A real SID sits in an assignment/quoted context near a "twilio"/"sid"/"account"
+    // hint, OR is a quoted standalone value — not buried in raw data/code tables.
+    validate: (value, line) => {
+      if (looksLikePlaceholder(value)) return false;
+      // Mixed-case hex (typical of a real random SID) or a clear Twilio context.
+      const hasTwilioContext = /twilio|account[_-]?sid|\bsid\b/i.test(line);
+      const inQuotedOrAssignment = /['"]/.test(line) || /[:=]/.test(line);
+      return hasTwilioContext || inQuotedOrAssignment;
+    },
   },
   {
     name: 'Private Key Block',
     detectorCode: '017',
-    regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
+    // Require real key material: the BEGIN header followed by at least one line
+    // of base64 body before the END marker. A bare header in prose/docs (with
+    // no key bytes) is not a committed secret and must not be flagged.
+    regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\r\n]+(?:[A-Za-z0-9/+=]\s*){4,}-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
     category: 'hard-coded-secret',
     severity: 'critical',
     message: 'Private key material committed in source',
@@ -160,6 +248,14 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
     severity: 'medium',
     message: 'Possible hard-coded API key / token assignment detected',
     suggestedFix: 'Move the value to an environment variable and reference it via process.env',
+    // Reject placeholders/env refs and require the assigned value to be
+    // high-entropy (real keys are random, not dictionary words).
+    validate: (value) => {
+      if (looksLikePlaceholder(value)) return false;
+      const quoted = value.match(/['"]([A-Za-z0-9_\-]{16,})['"]\s*$/);
+      const secret = quoted?.[1] ?? value;
+      return shannonEntropy(secret) >= 3.0;
+    },
   },
 ];
 
@@ -217,6 +313,9 @@ export async function scanSecurity(
       onProgress(scanned, files.length);
     }
     if (isTestFile(file)) continue;
+    // Defense-in-depth: never scan vendored / generated / minified files even
+    // if a caller passes them in (default ignores already exclude these).
+    if (isVendoredOrGenerated(file)) continue;
 
     try {
       const content = await readFile(resolve(projectRoot, file), 'utf-8');
@@ -302,6 +401,21 @@ function findPatternMatches(
   while ((match = regex.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const lineContent = lines[lineNumber - 1] ?? '';
+
+    // Skip minified / generated single-line bundles: they pack high-entropy
+    // substrings that masquerade as secrets. Line-scoped so real source is safe.
+    if (isLikelyMinifiedLine(lineContent)) {
+      if (!regex.global) break;
+      continue;
+    }
+
+    // Value-level validation: discard structurally-matching but non-secret
+    // values (placeholders, docs, low-entropy data) when the detector opts in.
+    if (pattern.validate && !pattern.validate(match[0], lineContent)) {
+      if (!regex.global) break;
+      continue;
+    }
+
     const column = match.index - content.lastIndexOf('\n', match.index - 1);
 
     const contentHash = hashString(match[0]).substring(0, 8);

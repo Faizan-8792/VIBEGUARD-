@@ -248,6 +248,64 @@ describe('Security Scanner', () => {
     expect(result.issues.some((i) => i.id.startsWith('SEC-006-'))).toBe(false);
   });
 
+  // ─── Nested-dependency & generated-file false-positive regressions ──────
+
+  it('does NOT scan files inside nested node_modules (monorepo client/server)', async () => {
+    await mkdir(join(testDir, 'client', 'node_modules', 'keyv'), { recursive: true });
+    await writeFile(
+      join(testDir, 'client', 'node_modules', 'keyv', 'README.md'),
+      `Connect with const uri = "postgres://user:pass@localhost:5432/db";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(
+      testDir,
+      ['client/node_modules/keyv/README.md'],
+      config,
+    );
+
+    expect(result.issues.length).toBe(0);
+  });
+
+  it('does NOT flag a Twilio-looking hex run buried in a minified data table', async () => {
+    // A long, whitespace-free generated line containing an AC+32hex substring.
+    const blob = 'var d=[' + 'AC' + 'a'.repeat(32) + ('0123456789abcdef'.repeat(40)) + '];';
+    await writeFile(join(testDir, 'src', 'data.ts'), blob, 'utf-8');
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/data.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-016-'))).toBe(false);
+  });
+
+  it('DOES flag a Twilio Account SID in a real assignment', async () => {
+    const sid = 'AC' + '0a1b2c3d4e5f60718293a4b5c6d7e8f9';
+    await writeFile(
+      join(testDir, 'src', 'twilio.ts'),
+      `const accountSid = "${sid}";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/twilio.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-016-'))).toBe(true);
+  });
+
+  it('does NOT flag a bare PRIVATE KEY header with no key body (docs/prose)', async () => {
+    await writeFile(
+      join(testDir, 'src', 'doc.ts'),
+      `// Example: paste your key as -----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/doc.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-017-'))).toBe(false);
+  });
+
   it('DOES flag a database URL with embedded credentials', async () => {
     await writeFile(
       join(testDir, 'src', 'dbcreds.ts'),

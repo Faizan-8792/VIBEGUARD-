@@ -472,6 +472,33 @@ function isScannableFile(file: string): boolean {
 }
 
 /**
+ * Defense-in-depth: skip vendored / generated files even if a caller passes
+ * them in. The default ignore globs already exclude these, but the engine is
+ * invoked directly from the MCP server and tests too.
+ */
+function isVendoredOrGenerated(file: string): boolean {
+  const f = file.replace(/\\/g, '/');
+  return (
+    /(?:^|\/)node_modules\//.test(f) ||
+    /(?:^|\/)(?:dist|build|out|coverage|vendor|third[_-]?party)\//.test(f) ||
+    /\.min\.(?:js|css)$/.test(f) ||
+    /\.bundle\.js$/.test(f) ||
+    /\.map$/.test(f)
+  );
+}
+
+/**
+ * True for minified / generated single-line bundles: very long lines with
+ * almost no whitespace. These pack patterns that masquerade as vulnerabilities
+ * (e.g. `eval(` inside a bundle), so they're skipped line-by-line.
+ */
+function isLikelyMinifiedLine(line: string): boolean {
+  if (line.length < 400) return false;
+  const whitespace = (line.match(/\s/g) ?? []).length;
+  return whitespace / line.length < 0.02;
+}
+
+/**
  * True when a line is a comment or a security-rule *definition* rather than real
  * executable code. This stops the scanner from flagging its own detector source
  * (regex/message/recommendation literals) and code comments as vulnerabilities.
@@ -501,6 +528,8 @@ export async function scanAttacks(
     if (file.match(/\.(test|spec)\./)) continue;
     // Only scan real code files — never docs, markdown, or plain text.
     if (!isScannableFile(file)) continue;
+    // Defense-in-depth: skip vendored / generated / minified files.
+    if (isVendoredOrGenerated(file)) continue;
 
     let content: string;
     try {
@@ -526,7 +555,7 @@ export async function scanAttacks(
         const lineContent = lines[lineNumber - 1] ?? '';
 
         // Skip matches on comment lines and rule-definition/metadata lines.
-        if (isNonExecutableLine(lineContent)) {
+        if (isNonExecutableLine(lineContent) || isLikelyMinifiedLine(lineContent)) {
           if (!regex.global) break;
           continue;
         }
