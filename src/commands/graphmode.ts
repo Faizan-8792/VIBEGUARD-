@@ -69,15 +69,18 @@ async function enableAction(ctx: CommandContext): Promise<void> {
 async function disableAction(ctx: CommandContext): Promise<void> {
   const { projectRoot, options } = ctx;
   const { removed } = await disableGraphMode(projectRoot);
+  const leftovers = await listGraphModeArtifacts(projectRoot);
 
   if (options.json) {
-    emitJson({ action: 'graphmode-off', enabled: false, removed });
+    emitJson({ action: 'graphmode-off', enabled: false, projectRoot, removed, leftovers });
     return;
   }
 
   const out: string[] = [];
   out.push('');
   out.push(header('GraphMode — OFF'));
+  out.push('');
+  out.push(keyValue('Project root', brand.secondary(projectRoot)));
   out.push('');
   if (removed.length > 0) {
     out.push(`  ${statusIcon('success')} ${brand.success('Removed graph-first rules:')}`);
@@ -88,7 +91,15 @@ async function disableAction(ctx: CommandContext): Promise<void> {
     out.push(`  ${statusIcon('info')} ${brand.muted('No GraphMode rule files were present.')}`);
   }
   out.push('');
+  if (leftovers.length > 0) {
+    out.push(`  ${statusIcon('warning')} ${brand.warning.bold('Still found mode instructions in:')}`);
+    for (const l of leftovers) out.push(`    ${brand.muted('•')} ${brand.secondary(l)}`);
+    out.push(`  ${brand.muted('Remove these manually, or re-run off in the correct project root.')}`);
+    out.push('');
+  }
   out.push(`  ${brand.muted('Normal mode restored. Graph data is kept for manual use.')}`);
+  out.push(`  ${brand.muted('Tip: if your IDE still shows "GraphMode: ON", start a NEW chat —')}`);
+  out.push(`  ${brand.muted('open AI sessions cache the old instructions until then.')}`);
   out.push('');
   process.stdout.write(out.join('\n') + '\n');
 }

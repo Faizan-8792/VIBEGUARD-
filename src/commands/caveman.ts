@@ -122,15 +122,20 @@ async function enableAction(ctx: CommandContext, rawLevel: string | undefined, l
 async function disableAction(ctx: CommandContext): Promise<void> {
   const { projectRoot, options } = ctx;
   const { removed } = await disableCavemanEngine(projectRoot);
+  // Post-off integrity scan: confirm no rule files survived (e.g. a file that
+  // couldn't be written, or a marker block in an unexpected place).
+  const leftovers = await listCavemanArtifacts(projectRoot);
 
   if (options.json) {
-    emitJson({ action: 'caveman-off', enabled: false, removed });
+    emitJson({ action: 'caveman-off', enabled: false, projectRoot, removed, leftovers });
     return;
   }
 
   const out: string[] = [];
   out.push('');
   out.push(header('Caveman Mode — OFF', '🗣️'));
+  out.push('');
+  out.push(keyValue('Project root', brand.secondary(projectRoot)));
   out.push('');
   if (removed.length > 0) {
     out.push(`  ${statusIcon('success')} ${brand.success('Removed always-on rules:')}`);
@@ -141,7 +146,15 @@ async function disableAction(ctx: CommandContext): Promise<void> {
     out.push(`  ${statusIcon('info')} ${brand.muted('No caveman rule files were present.')}`);
   }
   out.push('');
+  if (leftovers.length > 0) {
+    out.push(`  ${statusIcon('warning')} ${brand.warning.bold('Still found mode instructions in:')}`);
+    for (const l of leftovers) out.push(`    ${brand.muted('•')} ${brand.secondary(l)}`);
+    out.push(`  ${brand.muted('Remove these manually, or re-run off in the correct project root.')}`);
+    out.push('');
+  }
   out.push(`  ${brand.muted('Normal mode restored. Replies return to full prose.')}`);
+  out.push(`  ${brand.muted('Tip: if your IDE still shows "Caveman mode: ON", start a NEW chat —')}`);
+  out.push(`  ${brand.muted('open AI sessions cache the old instructions until then.')}`);
   out.push('');
   process.stdout.write(out.join('\n') + '\n');
 }
