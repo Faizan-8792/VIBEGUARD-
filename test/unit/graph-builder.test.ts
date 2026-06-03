@@ -91,6 +91,48 @@ describe('Graph Builder', () => {
     expect(result.summary.edges).toBeGreaterThan(0);
   });
 
+  it('connects CommonJS require() imports (.cjs / .js)', async () => {
+    // Electron mains, build scripts, and many .cjs/.js files use require()
+    // exclusively. The graph must connect these or they show up isolated.
+    await writeSrcFiles({
+      'main.cjs': 'const { preload } = require("./preload.cjs");\nfunction boot() { return preload(); }\nmodule.exports = { boot };',
+      'preload.cjs': 'function preload() { return 1; }\nmodule.exports = { preload };',
+    });
+
+    const result = await buildGraph(testDir, ['src/main.cjs', 'src/preload.cjs'], config, logger);
+
+    const mainNode = result.nodes.get('src/main.cjs');
+    const preloadNode = result.nodes.get('src/preload.cjs');
+
+    expect(mainNode!.imports).toContain('src/preload.cjs');
+    expect(preloadNode!.dependents).toContain('src/main.cjs');
+    expect(result.summary.edges).toBeGreaterThan(0);
+  });
+
+  it('connects an extensionless require() to a .js file', async () => {
+    await writeSrcFiles({
+      'app.js': 'const cfg = require("./config");\nmodule.exports = () => cfg;',
+      'config.js': 'module.exports = { port: 3000 };',
+    });
+
+    const result = await buildGraph(testDir, ['src/app.js', 'src/config.js'], config, logger);
+
+    expect(result.nodes.get('src/app.js')!.imports).toContain('src/config.js');
+    expect(result.nodes.get('src/config.js')!.dependents).toContain('src/app.js');
+  });
+
+  it('connects ESM re-exports (export ... from)', async () => {
+    await writeSrcFiles({
+      'index.ts': 'export { helper } from "./helper.js";',
+      'helper.ts': 'export function helper() { return 1; }',
+    });
+
+    const result = await buildGraph(testDir, ['src/index.ts', 'src/helper.ts'], config, logger);
+
+    expect(result.nodes.get('src/index.ts')!.imports).toContain('src/helper.ts');
+    expect(result.nodes.get('src/helper.ts')!.dependents).toContain('src/index.ts');
+  });
+
   it('persists graph.json and analysis-meta.json', async () => {
     await writeSrcFiles({ 'index.ts': 'export const x = 1;' });
 

@@ -283,33 +283,16 @@ export async function buildGraph(
     }
   }
 
-  // Normalize each node's imports to actual node keys. ESM TypeScript requires
-  // `.js` extensions in import specifiers (e.g. './user.js'), but node keys are
-  // the real source paths ('src/user.ts'). Without this, edges and dependents
-  // never connect for ESM TS projects. Map .js/.mjs/.cjs → .ts/.tsx and bare
-  // directory imports → index files.
+  // Normalize each node's imports to actual node keys. Import specifiers may be
+  // extensionless ('./user'), carry an ESM '.js' that maps to a '.ts' source,
+  // or point at a directory (→ index file). Node keys are the real on-disk
+  // paths of any language ('src/user.ts', 'electron/preload.cjs', 'main.py').
+  // Resolve against the real node set across every supported extension so edges
+  // connect regardless of which language/module system the file uses.
   const nodeKeySet = new Set(nodes.keys());
-  const resolveToNodeKey = (imp: string): string => {
-    if (nodeKeySet.has(imp)) return imp;
-    const withoutExt = imp.replace(/\.(js|mjs|cjs|jsx)$/, '');
-    const candidates = [
-      `${withoutExt}.ts`,
-      `${withoutExt}.tsx`,
-      `${imp}.ts`,
-      `${imp}.tsx`,
-      `${imp}/index.ts`,
-      `${imp}/index.tsx`,
-      `${withoutExt}/index.ts`,
-      `${withoutExt}/index.tsx`,
-    ];
-    for (const c of candidates) {
-      if (nodeKeySet.has(c)) return c;
-    }
-    return imp;
-  };
   for (const node of nodes.values()) {
     if (node.imports.length > 0) {
-      node.imports = [...new Set(node.imports.map(resolveToNodeKey))];
+      node.imports = [...new Set(node.imports.map((imp) => resolveToNodeKey(imp, nodeKeySet)))];
     }
   }
 
@@ -421,27 +404,35 @@ function extractImports(sourceFile: SourceFile, projectRoot: string, currentFile
   const imports: string[] = [];
   const currentDir = dirname(resolve(projectRoot, currentFile));
 
-  for (const decl of sourceFile.getImportDeclarations()) {
-    const specifier = decl.getModuleSpecifierValue();
+  const add = (specifier: string): void => {
     const resolved = resolveImportSpecifier(specifier, currentDir, projectRoot);
-    if (resolved) {
-      imports.push(resolved);
-    }
+    if (resolved) imports.push(resolved);
+  };
+
+  // ESM static imports: `import x from './y'`, `import './y'`.
+  for (const decl of sourceFile.getImportDeclarations()) {
+    add(decl.getModuleSpecifierValue());
   }
 
-  // Also check dynamic imports
+  // ESM re-exports: `export { x } from './y'`, `export * from './y'`.
+  for (const decl of sourceFile.getExportDeclarations()) {
+    const specifier = decl.getModuleSpecifierValue();
+    if (specifier) add(specifier);
+  }
+
+  // Dynamic `import('./y')` and CommonJS `require('./y')` — both appear as call
+  // expressions. CommonJS is essential: many .cjs/.js files (Electron mains,
+  // build scripts) use `require()` exclusively and would otherwise be isolated.
   const callExpressions = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);
   for (const call of callExpressions) {
     const expr = call.getExpression();
-    if (expr.getKind() === SyntaxKind.ImportKeyword) {
-      const args = call.getArguments();
-      if (args.length > 0 && args[0].getKind() === SyntaxKind.StringLiteral) {
-        const specifier = args[0].getText().slice(1, -1); // Remove quotes
-        const resolved = resolveImportSpecifier(specifier, currentDir, projectRoot);
-        if (resolved) {
-          imports.push(resolved);
-        }
-      }
+    const isDynamicImport = expr.getKind() === SyntaxKind.ImportKeyword;
+    const isRequire = expr.getKind() === SyntaxKind.Identifier && expr.getText() === 'require';
+    if (!isDynamicImport && !isRequire) continue;
+
+    const args = call.getArguments();
+    if (args.length > 0 && args[0].getKind() === SyntaxKind.StringLiteral) {
+      add(args[0].getText().slice(1, -1)); // strip surrounding quotes
     }
   }
 
@@ -454,29 +445,46 @@ function resolveImportSpecifier(specifier: string, currentDir: string, projectRo
     return null;
   }
 
-  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
   const resolved = resolve(currentDir, specifier);
   const rel = relative(projectRoot, resolved).replace(/\\/g, '/');
 
-  // Try exact match or with extensions
-  for (const ext of ['', ...extensions]) {
-    const candidate = rel + ext;
-    // We'll accept it as-is — the graph will only contain files that exist
-    if (ext === '' && extensions.some((e) => rel.endsWith(e))) {
-      return rel;
-    }
-    if (ext !== '') {
-      return candidate;
-    }
-  }
-
-  // Try index files
-  for (const ext of extensions) {
-    const candidate = rel + '/index' + ext;
-    return candidate;
-  }
-
+  // Return the specifier as a project-relative path. The exact on-disk file
+  // (extension, index file) is resolved later in resolveToNodeKey against the
+  // real node set, so we keep the raw relative path here without guessing an
+  // extension (guessing `.ts` here was wrong for .cjs/.js/.mjs projects).
   return rel;
+}
+
+/** Supported source extensions, ordered by resolution preference. */
+const RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.pyw', '.go', '.java'] as const;
+
+/**
+ * Resolve an import specifier (already project-relative, possibly extensionless
+ * or carrying an ESM `.js` that maps to a `.ts` source) to a real graph node
+ * key across every supported language/extension, including directory→index
+ * files. Returns the matched node key, or the input unchanged when no node
+ * matches. Shared by import-edge normalization and semantic-edge extraction so
+ * both connect files regardless of module system (ESM, CommonJS) or language.
+ */
+function resolveToNodeKey(imp: string, nodeKeySet: Set<string>): string {
+  if (nodeKeySet.has(imp)) return imp;
+
+  const withoutExt = imp.replace(/\.(js|mjs|cjs|jsx|ts|tsx)$/, '');
+  const bases = withoutExt === imp ? [imp] : [withoutExt, imp];
+
+  for (const base of bases) {
+    for (const ext of RESOLVE_EXTS) {
+      const direct = `${base}${ext}`;
+      if (nodeKeySet.has(direct)) return direct;
+    }
+  }
+  for (const base of bases) {
+    for (const ext of RESOLVE_EXTS) {
+      const indexFile = `${base}/index${ext}`;
+      if (nodeKeySet.has(indexFile)) return indexFile;
+    }
+  }
+  return imp;
 }
 
 function extractExports(sourceFile: SourceFile): string[] {
@@ -507,14 +515,23 @@ function extractSemanticEdges(
 ): GraphEdge[] {
   const edges: GraphEdge[] = [];
   const currentDir = dirname(resolve(projectRoot, currentFile));
+  const nodeKeySet = new Set(nodes.keys());
+
+  // Resolve a raw specifier to a real node key (any language/extension, index
+  // files) so semantic edges connect for ESM, CommonJS, and cross-language.
+  const resolveSpecifierToNode = (specifier: string): string | null => {
+    const rel = resolveImportSpecifier(specifier, currentDir, projectRoot);
+    if (!rel) return null;
+    const key = resolveToNodeKey(rel, nodeKeySet);
+    return nodeKeySet.has(key) ? key : null;
+  };
 
   // Build a map: imported symbol name -> resolved file path
   const importedSymbols = new Map<string, { file: string; symbol: string }>();
 
   for (const decl of sourceFile.getImportDeclarations()) {
-    const specifier = decl.getModuleSpecifierValue();
-    const resolvedFile = resolveImportSpecifier(specifier, currentDir, projectRoot);
-    if (!resolvedFile || !nodes.has(resolvedFile)) continue;
+    const resolvedFile = resolveSpecifierToNode(decl.getModuleSpecifierValue());
+    if (!resolvedFile) continue;
 
     // Named imports
     for (const named of decl.getNamedImports()) {
@@ -535,9 +552,38 @@ function extractSemanticEdges(
     }
   }
 
+  // CommonJS `const x = require('./y')` / `const { a, b } = require('./y')`.
+  // Map the bound local names to the target file so calls into them become edges.
+  for (const decl of sourceFile.getVariableDeclarations()) {
+    const initializer = decl.getInitializer();
+    if (!initializer || initializer.getKind() !== SyntaxKind.CallExpression) continue;
+    const call = initializer.asKindOrThrow(SyntaxKind.CallExpression);
+    if (call.getExpression().getText() !== 'require') continue;
+    const args = call.getArguments();
+    if (args.length === 0 || args[0].getKind() !== SyntaxKind.StringLiteral) continue;
+
+    const resolvedFile = resolveSpecifierToNode(args[0].getText().slice(1, -1));
+    if (!resolvedFile) continue;
+
+    const nameNode = decl.getNameNode();
+    if (nameNode.getKind() === SyntaxKind.ObjectBindingPattern) {
+      // Destructured: const { a, b: c } = require('./y')
+      for (const element of nameNode.asKindOrThrow(SyntaxKind.ObjectBindingPattern).getElements()) {
+        const local = element.getName();
+        const propNode = element.getPropertyNameNode();
+        const symbol = propNode ? propNode.getText() : local;
+        importedSymbols.set(local, { file: resolvedFile, symbol });
+      }
+    } else {
+      // Whole-module: const y = require('./y')
+      importedSymbols.set(nameNode.getText(), { file: resolvedFile, symbol: '*' });
+    }
+  }
+
   // Track which symbols from each target file are actually called
   const callEdges = new Map<string, Set<string>>(); // target file -> set of symbols called
   const typeEdges = new Map<string, Set<string>>(); // target file -> set of types referenced
+
 
   // Scan all call expressions
   const callExpressions = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);
