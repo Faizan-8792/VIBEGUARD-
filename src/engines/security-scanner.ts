@@ -2,10 +2,42 @@ import { readFile, access } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { hashString } from '../utils/hash-utils.js';
 import { getPatternsForFile } from './polyglot-security.js';
+import {
+  shannonEntropy,
+  looksLikePlaceholder,
+  hasHighSecretEntropy,
+  isLikelyMinifiedLine,
+  isCommentLine,
+  isVendoredOrGenerated,
+} from './security-validators.js';
 import type { ResolvedConfig } from '../storage/config-store.js';
 import type { Severity } from './security-types.js';
 
 export type { Severity } from './security-types.js';
+
+/**
+ * Categories that represent *live code* behavior rather than committed secret
+ * material. For these, a match inside a comment line is almost always a
+ * commented-out snippet or example and should be skipped to avoid noise on big
+ * projects. Secret categories (hard-coded-secret, custom-secret) are NEVER
+ * skipped in comments — a real key pasted into a comment is still a leak.
+ */
+const CODE_BEHAVIOR_CATEGORIES = new Set<string>([
+  'code-injection',
+  'command-injection',
+  'sql-injection',
+  'deserialization',
+  'framework-misuse',
+  'weak-crypto',
+  'insecure-transport',
+  'open-redirect',
+  'path-traversal',
+  'xxe',
+  'injection',
+  'logic-flaw',
+  'insecure-file',
+  'memory-safety',
+]);
 
 export interface SecurityIssue {
   id: string;
@@ -17,6 +49,8 @@ export interface SecurityIssue {
   column?: number;
   snippet?: string;
   suggestedFix?: string;
+  /** Exact substring that matched the detector — used for accurate remediation. */
+  match?: string;
 }
 
 export interface SecurityScanResult {
@@ -41,69 +75,10 @@ interface DetectorPattern {
   validate?: (matchedValue: string, line: string) => boolean;
 }
 
-// ─── Value-validation helpers ────────────────────────────────────────────────
-
-/** Shannon entropy in bits/char — random secrets score high, placeholders low. */
-function shannonEntropy(value: string): number {
-  if (value.length === 0) return 0;
-  const freq = new Map<string, number>();
-  for (const ch of value) freq.set(ch, (freq.get(ch) ?? 0) + 1);
-  let entropy = 0;
-  for (const count of freq.values()) {
-    const p = count / value.length;
-    entropy -= p * Math.log2(p);
-  }
-  return entropy;
-}
-
-/**
- * True when a value is an obvious placeholder rather than a real secret:
- * repeated chars ("XXXXXXXX"), env-var references, angle-bracket templates,
- * or words like example/placeholder/your_key. Note: well-known vendor "EXAMPLE"
- * doc keys are intentionally NOT excluded here because format-strict detectors
- * (e.g. AWS) do not run this entropy check — they stay format-validated.
- */
-function looksLikePlaceholder(rawValue: string): boolean {
-  const value = rawValue.replace(/^['"`]|['"`]$/g, '').trim();
-  if (value.length === 0) return true;
-  if (/^(.)\1{6,}$/.test(value)) return true; // e.g. "aaaaaaaa", "00000000"
-  if (/^\$\{[^}]+\}$/.test(value)) return true; // ${ENV_VAR}
-  if (/^<[^>]+>$/.test(value)) return true; // <your-key-here>
-  if (/^process\.env\./.test(value)) return true;
-  if (/\b(?:placeholder|example|changeme|your[_-]?(?:api|key|token|secret|password)|dummy|sample|redacted|insert[_-]?your|xxxx+|todo)\b/i.test(value)) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * True for minified / generated / single-line-bundle content: a very long line
- * with almost no whitespace (e.g. webpack bundles, embedded data tables). Such
- * lines are full of high-entropy substrings that masquerade as secrets, so all
- * detectors skip them. This is line-scoped so normal source is never affected.
- */
-function isLikelyMinifiedLine(line: string): boolean {
-  if (line.length < 400) return false;
-  const whitespace = (line.match(/\s/g) ?? []).length;
-  return whitespace / line.length < 0.02;
-}
-
-/**
- * Defense-in-depth: skip vendored / generated files even if a caller passes
- * them in (the default ignore globs already exclude these, but engines are
- * called directly from the MCP server and tests too).
- */
-function isVendoredOrGenerated(file: string): boolean {
-  const f = file.replace(/\\/g, '/');
-  return (
-    /(?:^|\/)node_modules\//.test(f) ||
-    /(?:^|\/)(?:dist|build|out|coverage|vendor|third[_-]?party)\//.test(f) ||
-    /\.min\.(?:js|css)$/.test(f) ||
-    /\.bundle\.js$/.test(f) ||
-    /\.map$/.test(f) ||
-    /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(f)
-  );
-}
+// Value-validation helpers (shannonEntropy, looksLikePlaceholder,
+// isLikelyMinifiedLine, isVendoredOrGenerated, isCommentLine) are imported from
+// ./security-validators.js so the scanner and the polyglot ruleset share one
+// accuracy layer.
 
 const BUILT_IN_PATTERNS: DetectorPattern[] = [
   {
@@ -249,13 +224,9 @@ const BUILT_IN_PATTERNS: DetectorPattern[] = [
     message: 'Possible hard-coded API key / token assignment detected',
     suggestedFix: 'Move the value to an environment variable and reference it via process.env',
     // Reject placeholders/env refs and require the assigned value to be
-    // high-entropy (real keys are random, not dictionary words).
-    validate: (value) => {
-      if (looksLikePlaceholder(value)) return false;
-      const quoted = value.match(/['"]([A-Za-z0-9_\-]{16,})['"]\s*$/);
-      const secret = quoted?.[1] ?? value;
-      return shannonEntropy(secret) >= 3.0;
-    },
+    // high-entropy with mixed character classes (real keys are random, not
+    // dictionary words or sequential IDs).
+    validate: (value) => hasHighSecretEntropy(value, 3.2),
   },
 ];
 
@@ -413,6 +384,15 @@ function findPatternMatches(
       continue;
     }
 
+    // Skip commented-out / example lines for CODE-behavior detectors (eval,
+    // exec, SQL building, weak crypto, framework misuse, etc.). A commented
+    // snippet is not live code. Secret detectors deliberately still scan
+    // comments — a real key in a comment is a committed leak.
+    if (CODE_BEHAVIOR_CATEGORIES.has(pattern.category) && isCommentLine(lineContent)) {
+      if (!regex.global) break;
+      continue;
+    }
+
     // Value-level validation: discard structurally-matching but non-secret
     // values (placeholders, docs, low-entropy data) when the detector opts in.
     if (pattern.validate && !pattern.validate(match[0], lineContent)) {
@@ -435,6 +415,7 @@ function findPatternMatches(
       column,
       snippet: lineContent.trim().substring(0, 100),
       suggestedFix: pattern.suggestedFix,
+      match: match[0],
     });
   }
 

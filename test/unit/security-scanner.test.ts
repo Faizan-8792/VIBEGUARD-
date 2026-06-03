@@ -358,4 +358,64 @@ describe('Security Scanner', () => {
 
     expect(calls).toBeGreaterThan(0);
   });
+
+  // ─── Accuracy hardening: false-positive reductions for large projects ────
+
+  it('does NOT flag placeholder values in generic key assignments', async () => {
+    await writeFile(
+      join(testDir, 'src', 'ph.ts'),
+      [
+        'const api_key = "your-api-key-here";',
+        'const client_secret = "changeme";',
+        'const auth_token = "<insert-your-token>";',
+        'const apikey = "process.env.API_KEY";',
+      ].join('\n'),
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/ph.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-018-'))).toBe(false);
+  });
+
+  it('does NOT flag a low-entropy dictionary value as a generic key', async () => {
+    await writeFile(
+      join(testDir, 'src', 'lowent.ts'),
+      `const access_token = "aaaaaaaaaaaaaaaaaaaa";`,
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/lowent.ts'], config);
+
+    expect(result.issues.some((i) => i.id.startsWith('SEC-018-'))).toBe(false);
+  });
+
+  it('exposes the matched secret on the issue for remediation', async () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwxyz1234567890';
+    await writeFile(join(testDir, 'src', 'm.ts'), `const k = "${secret}";`, 'utf-8');
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/m.ts'], config);
+
+    const issue = result.issues.find((i) => i.id.startsWith('SEC-001-'));
+    expect(issue?.match).toContain(secret);
+  });
+
+  it('does NOT flag a CORS wildcard that is commented out', async () => {
+    await writeFile(
+      join(testDir, 'src', 'commented.ts'),
+      [
+        '// app.use(cors({ origin: "*" }));  legacy, do not use',
+        'const x = 1;',
+      ].join('\n'),
+      'utf-8'
+    );
+
+    const config = await loadConfig(testDir);
+    const result = await scanSecurity(testDir, ['src/commented.ts'], config);
+
+    expect(result.issues.some((i) => i.category === 'framework-misuse')).toBe(false);
+  });
 });

@@ -206,6 +206,74 @@ describe('Integration: Polyglot graph building', () => {
     expect(result.issues.some((i) => i.id.includes('JAVA-001'))).toBe(true); // SQL injection
   });
 
+  it('does NOT flag member-access .eval()/.exec() as Python code injection', async () => {
+    await writeFiles({
+      'app/ml.py': [
+        'import torch',
+        '',
+        'def run(model, df):',
+        '    model.eval()',
+        '    df.eval("a + b")',
+        '    cursor.exec("noop")',
+      ].join('\n'),
+    });
+
+    const result = await scanSecurity(testDir, ['app/ml.py'], config);
+    expect(result.issues.some((i) => i.id.includes('PY-001'))).toBe(false);
+    expect(result.issues.some((i) => i.id.includes('PY-002'))).toBe(false);
+  });
+
+  it('still flags a real top-level eval() in Python', async () => {
+    await writeFiles({
+      'app/danger2.py': ['def run(cmd):', '    eval(cmd)'].join('\n'),
+    });
+
+    const result = await scanSecurity(testDir, ['app/danger2.py'], config);
+    expect(result.issues.some((i) => i.id.includes('PY-001'))).toBe(true);
+  });
+
+  it('does NOT flag placeholder hard-coded secrets in polyglot files', async () => {
+    await writeFiles({
+      'app/conf.py': 'SECRET_KEY = "changeme"\nPASSWORD = "your-password"',
+      'svc/conf.go': 'password = "changeme"',
+    });
+
+    const py = await scanSecurity(testDir, ['app/conf.py'], config);
+    const go = await scanSecurity(testDir, ['svc/conf.go'], config);
+    expect(py.issues.some((i) => i.id.includes('PY-009'))).toBe(false);
+    expect(go.issues.some((i) => i.id.includes('GO-005'))).toBe(false);
+  });
+
+  it('does NOT flag java.util.Random outside a security context', async () => {
+    await writeFiles({
+      'src/Game.java': [
+        'package app;',
+        'public class Game {',
+        '  private Random rng = new Random();',
+        '  public int roll() { return rng.nextInt(6); }',
+        '}',
+      ].join('\n'),
+    });
+
+    const result = await scanSecurity(testDir, ['src/Game.java'], config);
+    expect(result.issues.some((i) => i.id.includes('JAVA-011'))).toBe(false);
+  });
+
+  it('DOES flag java.util.Random used for a security token', async () => {
+    await writeFiles({
+      'src/Token.java': [
+        'package app;',
+        'public class Token {',
+        '  // generate a session token',
+        '  public int makeToken() { String token = ""; return new Random().nextInt(); }',
+        '}',
+      ].join('\n'),
+    });
+
+    const result = await scanSecurity(testDir, ['src/Token.java'], config);
+    expect(result.issues.some((i) => i.id.includes('JAVA-011'))).toBe(true);
+  });
+
   it('tags polyglot files by language and framework role', async () => {
     await writeFiles({
       'app/models.py': 'class User:\n    pass\n',

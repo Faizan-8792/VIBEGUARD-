@@ -5,6 +5,7 @@
 
 import { extname } from 'node:path';
 import type { Severity } from './security-types.js';
+import { hasHighSecretEntropy } from './security-validators.js';
 
 export interface PolyglotSecurityPattern {
   name: string;
@@ -15,6 +16,25 @@ export interface PolyglotSecurityPattern {
   message: string;
   suggestedFix?: string;
   languages: string[]; // which file extensions this applies to
+  /**
+   * Optional value-level validator (same contract as the core scanner). Runs on
+   * the matched substring; returning false discards the hit. Used to reject
+   * placeholder secrets and member-access false positives (e.g. `this.eval(`).
+   */
+  validate?: (matchedValue: string, line: string) => boolean;
+}
+
+/**
+ * Reject a bare-function match that is actually a method call on an object
+ * (e.g. `model.eval(`, `df.eval(`, `self.exec(`) or a definition
+ * (`def eval(`, `function exec(`). Real dangerous calls are the global builtins
+ * `eval(` / `exec(`, not member methods that happen to share the name — a huge
+ * false-positive source in ML/data code (pandas/torch `.eval()`).
+ */
+function isGlobalBuiltinCall(_value: string, line: string, fn: 'eval' | 'exec'): boolean {
+  const re = new RegExp(`(\\.|def\\s+|function\\s+|fn\\s+)\\s*${fn}\\s*\\(`);
+  if (re.test(line)) return false;
+  return true;
 }
 
 // ─── Python Security Patterns ───────────────────────────────────────────────
@@ -29,6 +49,7 @@ const PYTHON_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'Use of eval() allows arbitrary code execution',
     suggestedFix: 'Use ast.literal_eval() for safe evaluation, or avoid eval entirely',
     languages: ['py', 'pyw'],
+    validate: (value, line) => isGlobalBuiltinCall(value, line, 'eval'),
   },
   {
     name: 'exec() usage',
@@ -39,6 +60,7 @@ const PYTHON_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'Use of exec() allows arbitrary code execution',
     suggestedFix: 'Avoid exec() — use safer alternatives or restricted execution environments',
     languages: ['py', 'pyw'],
+    validate: (value, line) => isGlobalBuiltinCall(value, line, 'exec'),
   },
   {
     name: 'subprocess with shell=True',
@@ -109,6 +131,7 @@ const PYTHON_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'Hard-coded secret/password in Python source',
     suggestedFix: 'Use environment variables: os.environ.get("SECRET_KEY")',
     languages: ['py', 'pyw'],
+    validate: (value) => hasHighSecretEntropy(value, 3.0),
   },
   {
     name: 'Requests without verify',
@@ -194,6 +217,7 @@ const GO_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'Hard-coded credential in Go source',
     suggestedFix: 'Use environment variables: os.Getenv("SECRET")',
     languages: ['go'],
+    validate: (value) => hasHighSecretEntropy(value, 3.0),
   },
   {
     name: 'Weak crypto (MD5/SHA1)',
@@ -309,6 +333,7 @@ const JAVA_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'Hard-coded credential in Java source',
     suggestedFix: 'Use environment variables or a secrets manager',
     languages: ['java'],
+    validate: (value) => hasHighSecretEntropy(value, 3.0),
   },
   {
     name: 'LDAP injection',
@@ -339,6 +364,11 @@ const JAVA_PATTERNS: PolyglotSecurityPattern[] = [
     message: 'java.util.Random is not cryptographically secure',
     suggestedFix: 'Use SecureRandom for security-sensitive operations',
     languages: ['java'],
+    // Only flag when the line hints at a security-sensitive use (token, key,
+    // password, salt, nonce, OTP, session, secret). Plain Random for games,
+    // jitter, sampling, or shuffling is fine and must not be flagged.
+    validate: (_value, line) =>
+      /\b(?:token|key|password|passwd|secret|salt|nonce|otp|session|csrf|iv|seed|cipher|crypto|auth)\b/i.test(line),
   },
   {
     name: 'Trust all certificates',
