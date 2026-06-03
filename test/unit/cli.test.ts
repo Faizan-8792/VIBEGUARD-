@@ -67,6 +67,7 @@ describe('CLI Shell', () => {
       'config',
       'hook',
       'ignore',
+      'graphmode',
       'query',
       'path',
       'explain',

@@ -55,10 +55,9 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
     if (cavemanState.enabled) {
       process.stdout.write(`Caveman mode: ON\n`);
     }
-    // GraphMode: ON when the dependency graph exists (built at least once).
-    const { loadGraph } = await import('../engines/graph-builder.js');
-    const graphExists = await loadGraph(ctx.projectRoot);
-    if (graphExists) {
+    const { loadGraphModeState } = await import('../engines/graphmode.js');
+    const graphModeState = await loadGraphModeState(ctx.projectRoot);
+    if (graphModeState.enabled) {
       process.stdout.write(`GraphMode: ON\n`);
     }
 
@@ -194,30 +193,33 @@ async function runQuickSetupInteractive(ctx: CommandContext): Promise<void> {
   process.stdout.write(output.join('\n') + '\n');
   await runMapInteractive(ctx);
 
-  // 3) Enable Caveman Mode
+  // 3) Enable Caveman Mode + GraphMode (independent always-on modes)
   const { enableCaveman, DEFAULT_CAVEMAN_LEVEL } = await import('../engines/caveman.js');
   await enableCaveman(ctx.projectRoot, DEFAULT_CAVEMAN_LEVEL);
-  process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('Caveman Mode enabled (full)')}\n`);
-  process.stdout.write(`  ${statusIcon('success')} ${brand.success('GraphMode: ON (graph built)')}\n`);
+  const { enableGraphMode } = await import('../engines/graphmode.js');
+  await enableGraphMode(ctx.projectRoot);
+  process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')}\n`);
+  process.stdout.write(`  ${statusIcon('success')} ${brand.success('GraphMode enabled')}\n`);
   process.stdout.write(`\n  ${brand.primary.bold('All done! Project is fully ready.')}\n`);
 }
 
 /**
- * GraphMode toggle. GraphMode is "ON" when the dependency graph exists — it
- * enables graph-first token savings in all AI interactions. Toggling OFF deletes
- * the graph artifacts; toggling ON builds them.
+ * GraphMode toggle. GraphMode is an independent always-on mode (like Caveman)
+ * that writes a rule into every IDE/agent memory file telling the assistant to
+ * be graph-first and print a `GraphMode: ON` indicator. ON/OFF is real state in
+ * `.vibeguard/graphmode.json`; turning it on also builds the graph so the
+ * assistant has data to consult.
  */
 async function runGraphModeInteractive(ctx: CommandContext): Promise<void> {
-  const { loadGraph } = await import('../engines/graph-builder.js');
-  const graphExists = await loadGraph(ctx.projectRoot);
+  const { loadGraphModeState, enableGraphMode, disableGraphMode } = await import('../engines/graphmode.js');
+  const state = await loadGraphModeState(ctx.projectRoot);
 
-  if (graphExists) {
-    // Already ON — offer to turn off (delete graph artifacts).
+  if (state.enabled) {
     const action = await select<string>({
       message: brand.primary.bold('GraphMode is ON. What do you want?'),
       choices: [
-        { name: 'Rebuild graph (refresh)', value: 'rebuild' },
-        { name: 'Turn OFF (delete graph)', value: 'off' },
+        { name: 'Rebuild graph (refresh data)', value: 'rebuild' },
+        { name: 'Turn OFF (stop graph-first mode)', value: 'off' },
         { name: brand.muted('↩   Back'), value: 'back' },
       ],
     });
@@ -228,21 +230,21 @@ async function runGraphModeInteractive(ctx: CommandContext): Promise<void> {
       return;
     }
     if (action === 'off') {
-      const { rm } = await import('node:fs/promises');
-      const { join } = await import('node:path');
-      const artifactPaths = ['graph.json', 'graph.html', 'GRAPH_REPORT.md', 'analysis-meta.json'];
-      for (const f of artifactPaths) {
-        try { await rm(join(ctx.projectRoot, '.vibeguard', f)); } catch { /* noop */ }
+      const { removed } = await disableGraphMode(ctx.projectRoot);
+      process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('GraphMode: OFF')}\n`);
+      if (removed.length > 0) {
+        process.stdout.write(`  ${brand.muted(`Removed graph-first rules from ${removed.length} file(s).`)}\n`);
       }
-      process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('GraphMode: OFF')} ${brand.muted('(graph artifacts removed)')}\n`);
-      process.stdout.write(`  ${brand.muted('Rebuild anytime with "Dependency Graph" or "Quick Setup".')}\n`);
+      process.stdout.write(`  ${brand.muted('Graph data kept. Re-enable anytime.')}\n`);
     }
-  } else {
-    // OFF → build
-    process.stdout.write(`\n  ${statusIcon('info')} ${brand.muted('GraphMode is OFF. Building graph...')}\n\n`);
-    await runMapInteractive(ctx);
-    process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('GraphMode: ON')}\n`);
+    return;
   }
+
+  // OFF → enable: write rules + build graph so the assistant has data.
+  const { written } = await enableGraphMode(ctx.projectRoot);
+  process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('GraphMode: ON')} ${brand.muted(`(rules written to ${written.length} file(s))`)}\n`);
+  process.stdout.write(`  ${brand.muted('Building graph data...')}\n\n`);
+  await runMapInteractive(ctx);
 }
 
 async function runSecurityInteractive(ctx: CommandContext): Promise<void> {

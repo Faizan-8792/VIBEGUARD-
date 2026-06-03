@@ -666,6 +666,18 @@ function setupProgram(): Command {
       await runCaveman(ctx, { action: resolvedAction, level });
     });
 
+  // graphmode command — graph-first context mode (independent of caveman)
+  program
+    .command('graphmode [action]')
+    .description('GraphMode: graph-first, token-saving context for AI (action: on|off|status)')
+    .action(async (action: string | undefined) => {
+      const globalOpts = program.opts() as GlobalOptions;
+      const ctx = await createContext(globalOpts, 'graphmode');
+      const { runGraphMode } = await import('./commands/graphmode.js');
+      const resolvedAction = (action ?? 'status') as 'on' | 'off' | 'status';
+      await runGraphMode(ctx, { action: resolvedAction });
+    });
+
   // audit command — unified security audit (SCA + taint + misconfig + secrets + attacks)
   program
     .command('audit')

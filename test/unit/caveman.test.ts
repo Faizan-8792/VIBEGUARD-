@@ -74,10 +74,13 @@ describe('caveman engine', () => {
     expect(body).toContain('stop caveman');
   });
 
-  it('rule body requires the visible "Caveman mode: ON" indicator with the level', () => {
+  it('rule body requires the visible "Caveman mode: ON" indicator (plain, no emoji/level)', () => {
     for (const lvl of CAVEMAN_LEVELS) {
       const body = cavemanRuleBody(lvl);
-      expect(body).toContain(`🪨 Caveman mode: ON (${lvl})`);
+      expect(body).toContain(`Caveman mode: ON`);
+      // Plain indicator only — no emoji, no level suffix.
+      expect(body).not.toContain('🪨 Caveman mode: ON');
+      expect(body).not.toContain(`Caveman mode: ON (${lvl})`);
       expect(body.toLowerCase()).toContain('begin every reply');
     }
   });

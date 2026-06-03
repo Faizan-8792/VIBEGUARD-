@@ -149,7 +149,7 @@ describe('Integration: Caveman multi-IDE rule mirroring', () => {
     const { enableCaveman } = await import('../../src/engines/caveman.js');
     await enableCaveman(projectRoot, 'ultra');
     const body = await readFile(join(projectRoot, KIRO), 'utf-8');
-    expect(body).toContain('🪨 Caveman mode: ON (ultra)');
+    expect(body).toContain('Caveman mode: ON');
     expect(body).toContain('inclusion: always');
     expect(body).toMatch(/description: .+/);
   });
@@ -164,9 +164,9 @@ describe('Integration: Caveman multi-IDE rule mirroring', () => {
     const cursor = await readFile(join(projectRoot, CURSOR), 'utf-8');
     const windsurf = await readFile(join(projectRoot, WINDSURF), 'utf-8');
     expect(cursor).toContain('alwaysApply: true');
-    expect(cursor).toContain('🪨 Caveman mode: ON (full)');
+    expect(cursor).toContain('Caveman mode: ON');
     expect(windsurf).toContain('trigger: always_on');
-    expect(windsurf).toContain('🪨 Caveman mode: ON (full)');
+    expect(windsurf).toContain('Caveman mode: ON');
   });
 
   it('creates cross-tool memory files (CLAUDE.md, AGENTS.md) and folds existing ones', async () => {
@@ -181,7 +181,7 @@ describe('Integration: Caveman multi-IDE rule mirroring', () => {
     for (const f of ['CLAUDE.md', 'AGENTS.md', '.windsurfrules']) {
       const c = await readFile(join(projectRoot, f), 'utf-8');
       expect(c).toContain('vibeguard-caveman:begin');
-      expect(c).toContain('🪨 Caveman mode: ON (full)');
+      expect(c).toContain('Caveman mode: ON');
     }
 
     // Disable strips the block; existing files keep their original content,

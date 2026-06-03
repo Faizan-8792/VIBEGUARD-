@@ -904,8 +904,23 @@ export async function runUninstall(ctx: CommandContext, opts: { platform: string
     }
   }
 
+  // Also tear down GraphMode rule files so uninstall leaves nothing behind.
+  const { removeGraphModeRules, saveGraphModeState, GRAPHMODE_SCHEMA_VERSION } =
+    await import('../engines/graphmode.js');
+  const removedGraphMode = await removeGraphModeRules(projectRoot);
+  if (removedGraphMode.length > 0) {
+    await saveGraphModeState(projectRoot, {
+      schemaVersion: GRAPHMODE_SCHEMA_VERSION,
+      enabled: false,
+      updatedAt: new Date().toISOString(),
+    });
+    if (!ctx.options.json) {
+      process.stdout.write(`  ${statusIcon('success')} ${brand.success('Removed GraphMode rules')}\n\n`);
+    }
+  }
+
   if (ctx.options.json) {
-    emitJson({ action: 'uninstall', platform, uninstalled: true, cavemanRemoved: removedCaveman });
+    emitJson({ action: 'uninstall', platform, uninstalled: true, cavemanRemoved: removedCaveman, graphModeRemoved: removedGraphMode });
   }
 }
 
