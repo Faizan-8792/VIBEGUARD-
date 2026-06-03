@@ -425,8 +425,13 @@ async function installCursor(projectRoot: string): Promise<void> {
   const rulesDir = join(projectRoot, '.cursor', 'rules');
   await mkdir(rulesDir, { recursive: true });
 
+  // Cursor's rule parser expects all three frontmatter keys: description, globs,
+  // and alwaysApply. Omitting `globs` causes Cursor to silently ignore the rule
+  // (the reported "not working" bug). `globs: **/*` + `alwaysApply: true` makes
+  // it a true always-on project rule across every file type.
   const cursorRule = `---
-description: VibeGuard — intelligent context selection for code understanding
+description: VibeGuard — intelligent, graph-first context selection
+globs: **/*
 alwaysApply: true
 ---
 
@@ -449,14 +454,19 @@ The dependency graph is at \`.vibeguard/graph.json\`. Use it to understand file 
 
   await writeFile(join(rulesDir, 'vibeguard.mdc'), cursorRule, 'utf-8');
 
+  // Cursor reads MCP servers from .cursor/mcp.json (mcpServers key) — give it
+  // the live VibeGuard tools, matching what the Kiro/VS Code installers do.
+  const mcpResult = await writeMcpConfig(projectRoot, join('.cursor', 'mcp.json'));
+
   const output: string[] = [];
   output.push('');
   output.push(header('VibeGuard — Cursor Install'));
   output.push('');
   output.push(`  ${statusIcon('success')} ${brand.success('Created')} ${brand.muted('.cursor/rules/vibeguard.mdc')}`);
+  output.push(`  ${statusIcon('success')} ${brand.success(mcpResult.action)} ${brand.muted(mcpResult.path)}`);
   output.push('');
   output.push(`  ${brand.primary.bold('Done!')} VibeGuard is now always-on in Cursor.`);
-  output.push(`  ${brand.muted('Cursor will use the dependency graph to select relevant files automatically.')}`);
+  output.push(`  ${brand.muted('Reload Cursor (or restart it) so it picks up the new rule + MCP server.')}`);
   output.push('');
   process.stdout.write(output.join('\n') + '\n');
 }
@@ -980,6 +990,13 @@ async function uninstallCursor(projectRoot: string): Promise<void> {
     output.push(`  ${statusIcon('success')} ${brand.success('Removed')} ${brand.muted('.cursor/rules/vibeguard.mdc')}`);
   } catch {
     output.push(`  ${statusIcon('info')} ${brand.muted('Cursor rule not found (already removed)')}`);
+  }
+
+  const mcpResult = await removeMcpConfig(projectRoot, join('.cursor', 'mcp.json'));
+  if (mcpResult.removed) {
+    output.push(`  ${statusIcon('success')} ${brand.success('Removed vibeguard server from')} ${brand.muted(mcpResult.path)}`);
+  } else {
+    output.push(`  ${statusIcon('info')} ${brand.muted('No vibeguard MCP entry found (already removed)')}`);
   }
 
   output.push('');

@@ -80,7 +80,6 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
         { name: 'Trash Manager          — View soft-deleted files', value: 'trash' },
         { name: 'Initialize Config      — Setup .vibeguard/', value: 'init' },
         { name: 'Configure LLM          — Add API key (OpenAI, Gemini, DeepSeek...)', value: 'llm' },
-        { name: 'Project Report         — Full project description', value: 'report' },
         { name: brand.muted('Exit'), value: 'exit' },
       ],
     });
@@ -129,9 +128,6 @@ export async function runInteractive(ctx: CommandContext): Promise<void> {
           break;
         case 'llm':
           await runLLMConfigInteractive(ctx);
-          break;
-        case 'report':
-          await runReportInteractive(ctx);
           break;
       }
     } catch (err) {
@@ -184,18 +180,19 @@ async function runQuickSetupInteractive(ctx: CommandContext): Promise<void> {
     }
   }
 
-  // 2) Build graph + HTML + report
-  output.push(`  ${statusIcon('info')} ${brand.muted('Building dependency graph...')}`);
-  process.stdout.write(output.join('\n') + '\n');
-  await runMapInteractive(ctx);
-
-  // 3) Enable Caveman Mode + GraphMode (independent always-on modes)
+  // 2) Enable Caveman Mode + GraphMode (independent always-on modes)
   const { enableCaveman, DEFAULT_CAVEMAN_LEVEL } = await import('../engines/caveman.js');
   await enableCaveman(ctx.projectRoot, DEFAULT_CAVEMAN_LEVEL);
   const { enableGraphMode } = await import('../engines/graphmode.js');
   await enableGraphMode(ctx.projectRoot);
-  process.stdout.write(`\n  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')}\n`);
-  process.stdout.write(`  ${statusIcon('success')} ${brand.success('GraphMode enabled')}\n`);
+  output.push(`  ${statusIcon('success')} ${brand.success('Caveman Mode enabled')}`);
+  output.push(`  ${statusIcon('success')} ${brand.success('GraphMode enabled')}`);
+  process.stdout.write(output.join('\n') + '\n');
+
+  // 3) Build the dependency map — ask the user HOW (LLM / copy-prompt / offline).
+  process.stdout.write(`\n  ${brand.primary.bold('Now build the dependency map:')}\n\n`);
+  await chooseMapSource(ctx);
+
   process.stdout.write(`\n  ${brand.primary.bold('All done! Project is fully ready.')}\n`);
 }
 
@@ -749,7 +746,7 @@ async function runPackInteractive(ctx: CommandContext): Promise<void> {
 }
 
 async function runCavemanInteractive(ctx: CommandContext): Promise<void> {
-  const { loadCavemanState, levelDescription, estimatedSavingsPct } = await import('../engines/caveman.js');
+  const { loadCavemanState, estimatedSavingsPct } = await import('../engines/caveman.js');
   const { runCaveman } = await import('./caveman.js');
 
   const state = await loadCavemanState(ctx.projectRoot);
@@ -767,9 +764,9 @@ async function runCavemanInteractive(ctx: CommandContext): Promise<void> {
   const choice = await select<string>({
     message: brand.primary.bold('Caveman action:'),
     choices: [
-      { name: `Enable — lite    ${brand.muted(`(~${estimatedSavingsPct('lite')}% · ${levelDescription('lite')})`)}`, value: 'lite' },
-      { name: `Enable — full    ${brand.muted(`(~${estimatedSavingsPct('full')}% · classic caveman)`)}`, value: 'full' },
-      { name: `Enable — ultra   ${brand.muted(`(~${estimatedSavingsPct('ultra')}% · telegraphic)`)}`, value: 'ultra' },
+      { name: `Enable — lite    ${brand.muted(`(~${estimatedSavingsPct('lite')}%)`)}`, value: 'lite' },
+      { name: `Enable — full    ${brand.muted(`(~${estimatedSavingsPct('full')}%)`)}`, value: 'full' },
+      { name: `Enable — ultra   ${brand.muted(`(~${estimatedSavingsPct('ultra')}%)`)}`, value: 'ultra' },
       { name: 'Disable (normal mode)', value: 'off' },
       { name: brand.muted('↩   Back'), value: 'back' },
     ],
@@ -846,146 +843,6 @@ async function copyFixInstructionsToClipboard(issues: SecurityIssue[]): Promise<
   clipText.push('4. Fixing CORS configuration to use specific origins');
 
   await copyToClipboard(clipText.join('\n'));
-}
-
-async function runReportInteractive(ctx: CommandContext): Promise<void> {
-  const { readFile } = await import('node:fs/promises');
-  const { join } = await import('node:path');
-  const { loadGraph } = await import('../engines/graph-builder.js');
-  const { analyzeHealth } = await import('../engines/health-analyzer.js');
-  const { resolveFiles } = await import('../utils/glob-resolver.js');
-  const { scanSecurity } = await import('../engines/security-scanner.js');
-
-  ctx.logger.startSpinner('Generating project report...');
-
-  const output: string[] = [];
-  output.push(header('Project Report'));
-  output.push('');
-
-  // Read package.json for project info
-  let projectName = 'Unknown';
-  let projectVersion = '0.0.0';
-  let projectDescription = '';
-  let dependencies: string[] = [];
-  let devDependencies: string[] = [];
-
-  try {
-    const pkgContent = await readFile(join(ctx.projectRoot, 'package.json'), 'utf-8');
-    const pkg = JSON.parse(pkgContent);
-    projectName = pkg.name ?? 'Unknown';
-    projectVersion = pkg.version ?? '0.0.0';
-    projectDescription = pkg.description ?? '';
-    dependencies = Object.keys(pkg.dependencies ?? {});
-    devDependencies = Object.keys(pkg.devDependencies ?? {});
-  } catch {
-    // No package.json
-  }
-
-  // Project identity
-  output.push(keyValue('Name', brand.info.bold(projectName)));
-  output.push(keyValue('Version', brand.secondary(projectVersion)));
-  if (projectDescription) {
-    output.push(keyValue('Description', brand.muted(projectDescription)));
-  }
-  output.push('');
-
-  // File stats
-  const files = await resolveFiles(ctx.projectRoot, ctx.config.effectiveInclude, ctx.config.effectiveSkipSet);
-  output.push(keyValue('Source Files', brand.info.bold(String(files.length))));
-  output.push(keyValue('Dependencies', brand.info(String(dependencies.length))));
-  output.push(keyValue('Dev Dependencies', brand.muted(String(devDependencies.length))));
-  output.push('');
-
-  // Stack detection
-  const stack: string[] = [];
-  if (dependencies.includes('typescript') || devDependencies.includes('typescript')) stack.push('TypeScript');
-  if (dependencies.includes('react')) stack.push('React');
-  if (dependencies.includes('next')) stack.push('Next.js');
-  if (dependencies.includes('vue')) stack.push('Vue');
-  if (dependencies.includes('express')) stack.push('Express');
-  if (dependencies.includes('fastify')) stack.push('Fastify');
-  if (devDependencies.includes('vitest')) stack.push('Vitest');
-  if (devDependencies.includes('jest')) stack.push('Jest');
-  if (dependencies.includes('prisma') || dependencies.includes('@prisma/client')) stack.push('Prisma');
-  if (dependencies.includes('tailwindcss')) stack.push('Tailwind');
-
-  if (stack.length > 0) {
-    output.push(keyValue('Stack', brand.secondary(stack.join(', '))));
-    output.push('');
-  }
-
-  // Graph stats
-  const graphData = await loadGraph(ctx.projectRoot);
-  if (graphData) {
-    const nodes = Object.keys(graphData.nodes).length;
-    let edges = 0;
-    for (const node of Object.values(graphData.nodes)) {
-      edges += node.imports.length;
-    }
-    output.push(divider());
-    output.push('');
-    output.push(`  ${brand.primary.bold('Dependency Graph')}`);
-    output.push(keyValue('  Nodes', brand.info(String(nodes))));
-    output.push(keyValue('  Edges', brand.info(String(edges))));
-    output.push(keyValue('  Avg Imports/File', brand.muted(nodes > 0 ? (edges / nodes).toFixed(1) : '0')));
-    output.push('');
-  }
-
-  // Health summary
-  try {
-    const health = await analyzeHealth(ctx.config, ctx.projectRoot);
-    output.push(divider());
-    output.push('');
-    output.push(`  ${brand.primary.bold('Health Scores')}`);
-    output.push(keyValue('  Overall', scoreBar(health.summary.projectHealth)));
-    output.push(keyValue('  Security', scoreBar(health.summary.security)));
-    output.push(keyValue('  Dead Code', scoreBar(health.summary.deadCode)));
-    output.push(keyValue('  Architecture', scoreBar(health.summary.architecture)));
-    output.push('');
-  } catch {
-    // Health analysis failed
-  }
-
-  // Security summary
-  try {
-    const secResult = await scanSecurity(ctx.projectRoot, files, ctx.config);
-    if (secResult.issues.length > 0) {
-      output.push(divider());
-      output.push('');
-      output.push(`  ${brand.primary.bold('Security Issues')}`);
-      output.push(summaryLine([
-        { label: 'Critical', value: secResult.counts.critical, color: secResult.counts.critical > 0 ? 'danger' : 'muted' },
-        { label: 'High', value: secResult.counts.high, color: secResult.counts.high > 0 ? 'warning' : 'muted' },
-        { label: 'Medium', value: secResult.counts.medium, color: 'muted' },
-        { label: 'Low', value: secResult.counts.low, color: 'muted' },
-      ]));
-      output.push('');
-    }
-  } catch {
-    // Security scan failed
-  }
-
-  // Top dependencies
-  if (dependencies.length > 0) {
-    output.push(divider());
-    output.push('');
-    output.push(`  ${brand.primary.bold('Key Dependencies')}`);
-    for (const dep of dependencies.slice(0, 10)) {
-      output.push(`    ${brand.muted('•')} ${dep}`);
-    }
-    if (dependencies.length > 10) {
-      output.push(`    ${brand.muted(`... and ${dependencies.length - 10} more`)}`);
-    }
-    output.push('');
-  }
-
-  output.push(divider());
-  output.push('');
-  output.push(`  ${brand.muted('Generated by VibeGuard')} ${brand.muted(`v${projectVersion}`)}`);
-  output.push('');
-
-  ctx.logger.stopSpinner(true);
-  process.stdout.write(output.join('\n') + '\n');
 }
 
 async function runAttackInteractive(ctx: CommandContext): Promise<void> {
