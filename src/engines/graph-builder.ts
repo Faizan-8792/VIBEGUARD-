@@ -380,7 +380,9 @@ export async function buildGraph(
     buildTimestamp: new Date().toISOString(),
     fileHashes: currentHashes,
     parseErrors,
-    warnings: [],
+    warnings: oversizedSkips.length > 0
+      ? [`Skipped ${oversizedSkips.length} oversized/minified file(s) to bound memory: ${oversizedSkips.slice(0, 20).join(', ')}${oversizedSkips.length > 20 ? ', …' : ''}`]
+      : [],
   };
 
   await store.write('graph.json', graphData);
