@@ -1,6 +1,6 @@
 {
   "name": "codescout-cli",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Local-only CLI that makes AI coding assistants understand your codebase 80-95% cheaper. Security scanning, dead code detection, cyberattack protection, and intelligent context packaging.",
   "type": "module",
   "author": "Faizan <faizan8792@github>",
