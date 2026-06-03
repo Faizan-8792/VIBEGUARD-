@@ -96,8 +96,19 @@ function buildHTML(
       color: #2b3245;
       height: 100vh;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
+    /* Auto-hide top header: hidden by default, slides in on cursor-to-top or
+       scroll-up. Fixed overlay so it never steals layout space from the graph. */
     #header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 200;
+      transform: translateY(-100%);
+      transition: transform 0.25s ease;
       background: linear-gradient(135deg, #ffffff 0%, #eef1fa 100%);
       padding: 16px 24px;
       display: flex;
@@ -105,6 +116,16 @@ function buildHTML(
       justify-content: space-between;
       border-bottom: 1px solid #d8def0;
       box-shadow: 0 1px 8px rgba(80, 90, 130, 0.06);
+    }
+    #header.visible { transform: translateY(0); }
+    /* Thin always-present hover strip at the very top to summon the header. */
+    #header-trigger {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 12px;
+      z-index: 199;
     }
     #header h1 {
       font-size: 18px;
@@ -176,7 +197,7 @@ function buildHTML(
       border-radius: 50%;
       box-shadow: 0 0 0 2px #ffffff, 0 1px 3px rgba(0,0,0,0.15);
     }
-    #graph { width: 100%; height: calc(100vh - 110px); }
+    #graph { width: 100%; flex: 1 1 auto; min-height: 0; }
     #tooltip {
       position: absolute;
       top: 120px;
@@ -217,6 +238,7 @@ function buildHTML(
   </style>
 </head>
 <body>
+  <div id="header-trigger"></div>
   <div id="header">
     <h1>🛡️ CodeScout — Dependency Graph</h1>
     <div class="stats">
@@ -383,6 +405,42 @@ function buildHTML(
         hideLinksPanel();
       }
     });
+
+    // ── Auto-hide top header ──────────────────────────────────────────────
+    // Hidden by default. Reveal when the cursor is near the top edge or the
+    // user scrolls up; hide again when the cursor leaves the top zone.
+    (function setupHeaderAutoHide() {
+      const header = document.getElementById('header');
+      const trigger = document.getElementById('header-trigger');
+      const REVEAL_ZONE = 60;   // px from top that keeps the header visible
+      let hideTimer = null;
+
+      function show() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        header.classList.add('visible');
+      }
+      function scheduleHide() {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => header.classList.remove('visible'), 400);
+      }
+
+      // Cursor near the very top → show; moving well below the header → hide.
+      document.addEventListener('mousemove', (e) => {
+        if (e.clientY <= REVEAL_ZONE) show();
+        else if (e.clientY > header.offsetHeight + REVEAL_ZONE) scheduleHide();
+      });
+
+      // Scroll up (wheel) anywhere reveals it; scroll down hides it.
+      window.addEventListener('wheel', (e) => {
+        if (e.deltaY < 0) show();
+        else if (e.deltaY > 0) scheduleHide();
+      }, { passive: true });
+
+      // Hover strip + header itself keep it open.
+      trigger.addEventListener('mouseenter', show);
+      header.addEventListener('mouseenter', show);
+      header.addEventListener('mouseleave', scheduleHide);
+    })();
   </script>
 </body>
 </html>`;

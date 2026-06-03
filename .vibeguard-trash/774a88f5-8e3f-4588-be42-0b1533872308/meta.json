@@ -1,8 +1,0 @@
-{
-  "id": "774a88f5-8e3f-4588-be42-0b1533872308",
-  "originalPath": "test/fixtures/vulnerable-project/src/auth.ts",
-  "movedAt": "2026-06-02T06:24:54.227Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}

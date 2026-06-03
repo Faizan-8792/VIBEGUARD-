@@ -1,8 +1,0 @@
-{
-  "id": "a2fbc5b3-4be7-4e04-87a8-d7b0bddbd04d",
-  "originalPath": "test/fixtures/vulnerable-project/src/api-routes.ts",
-  "movedAt": "2026-06-02T06:24:54.212Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}

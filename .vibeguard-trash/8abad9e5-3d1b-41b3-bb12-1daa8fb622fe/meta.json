@@ -1,8 +1,0 @@
-{
-  "id": "8abad9e5-3d1b-41b3-bb12-1daa8fb622fe",
-  "originalPath": "test/fixtures/vulnerable-project/src/database.ts",
-  "movedAt": "2026-06-02T06:24:54.244Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "900c9292-6a0e-4932-9f1c-7bb628a7d071",
-  "originalPath": "test/fixtures/vulnerable-project/src/orphan-utils.ts",
-  "movedAt": "2026-06-02T06:24:54.261Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}

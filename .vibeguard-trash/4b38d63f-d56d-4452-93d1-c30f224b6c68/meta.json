@@ -1,8 +1,0 @@
-{
-  "id": "4b38d63f-d56d-4452-93d1-c30f224b6c68",
-  "originalPath": "test/fixtures/vulnerable-project/src/unused-module.ts",
-  "movedAt": "2026-06-02T06:24:54.281Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}

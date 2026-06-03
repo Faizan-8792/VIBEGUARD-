@@ -1,8 +1,0 @@
-{
-  "id": "5770af13-d49e-464a-94ca-e54577fb4448",
-  "originalPath": "test/fixtures/vulnerable-project/src/server.ts",
-  "movedAt": "2026-06-02T06:24:54.271Z",
-  "importance": 0,
-  "lastCommitDate": null,
-  "kind": "file"
-}
